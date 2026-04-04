@@ -108,7 +108,7 @@ Download the installer from [GitHub Releases](https://github.com/matevip/matecla
 
 | Platform | File | Notes |
 |----------|------|-------|
-| **macOS (Apple Silicon)** | `MateClaw_<version>_arm64.dmg` | Recommended for M1/M2/M3/M4 Mac |
+| **macOS (Apple Silicon)** | `MateClaw_<version>_arm64.dmg` | Recommended for M1/M2/M3/M4/M5 Mac |
 | **macOS (Apple Silicon)** | `MateClaw_<version>_arm64.zip` | zip format (Apple Silicon) |
 | **macOS (Intel)** | `MateClaw_<version>_x64.dmg` | For Intel-based Mac |
 | **macOS (Intel)** | `MateClaw_<version>_x64.zip` | zip format (Intel) |

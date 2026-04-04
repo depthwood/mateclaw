@@ -108,7 +108,7 @@ docker compose up -d
 
 | 平台 | 文件 | 说明 |
 |------|------|------|
-| **macOS (Apple Silicon)** | `MateClaw_<version>_arm64.dmg` | 推荐 M1/M2/M3/M4 Mac 使用 |
+| **macOS (Apple Silicon)** | `MateClaw_<version>_arm64.dmg` | 推荐 M1/M2/M3/M4/M5 Mac 使用 |
 | **macOS (Apple Silicon)** | `MateClaw_<version>_arm64.zip` | zip 格式（Apple Silicon） |
 | **macOS (Intel)** | `MateClaw_<version>_x64.dmg` | 适用于 Intel Mac |
 | **macOS (Intel)** | `MateClaw_<version>_x64.zip` | zip 格式（Intel） |
