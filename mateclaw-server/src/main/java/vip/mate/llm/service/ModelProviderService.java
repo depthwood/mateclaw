@@ -26,7 +26,7 @@ public class ModelProviderService {
 
     public List<ProviderInfoDTO> listProviders() {
         List<ModelProviderEntity> providers = modelProviderMapper.selectList(new LambdaQueryWrapper<ModelProviderEntity>()
-                .orderByAsc(ModelProviderEntity::getIsLocal)
+                .orderByDesc(ModelProviderEntity::getIsLocal)
                 .orderByAsc(ModelProviderEntity::getIsCustom)
                 .orderByAsc(ModelProviderEntity::getName));
         Map<String, List<ModelConfigEntity>> modelsByProvider = modelConfigService.listModels().stream()
