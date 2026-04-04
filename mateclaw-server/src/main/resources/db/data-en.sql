@@ -26,7 +26,26 @@ VALUES (1000000003, 'StateGraph ReAct', 'StateGraph-based ReAct Agent with expli
         'You are an intelligent assistant based on the StateGraph architecture. You can use tools to help users solve problems. Please respond professionally and in a friendly manner.',
         NULL, 10, TRUE, '🔄', 'react,stategraph,tools', NOW(), NOW(), 0);
 
--- Default model provider configuration
+-- ==================== Local Model Providers (displayed first) ====================
+
+MERGE INTO mate_model_provider (provider_id, name, api_key_prefix, chat_model, api_key, base_url, generate_kwargs, is_custom, is_local, support_model_discovery, support_connection_check, freeze_url, require_api_key, create_time, update_time)
+KEY (provider_id)
+VALUES ('ollama', 'Ollama', '', 'OpenAIChatModel', '', 'http://127.0.0.1:11434', '{"max_tokens":null}', FALSE, TRUE, TRUE, TRUE, FALSE, FALSE, NOW(), NOW());
+
+MERGE INTO mate_model_provider (provider_id, name, api_key_prefix, chat_model, api_key, base_url, generate_kwargs, is_custom, is_local, support_model_discovery, support_connection_check, freeze_url, require_api_key, create_time, update_time)
+KEY (provider_id)
+VALUES ('lmstudio', 'LM Studio', '', 'OpenAIChatModel', '', 'http://localhost:1234/v1', '{"max_tokens":null}', FALSE, TRUE, TRUE, TRUE, FALSE, FALSE, NOW(), NOW());
+
+MERGE INTO mate_model_provider (provider_id, name, api_key_prefix, chat_model, api_key, base_url, generate_kwargs, is_custom, is_local, support_model_discovery, support_connection_check, freeze_url, require_api_key, create_time, update_time)
+KEY (provider_id)
+VALUES ('llamacpp', 'llama.cpp (Local)', '', 'OpenAIChatModel', '', '', '{}', FALSE, TRUE, FALSE, TRUE, FALSE, FALSE, NOW(), NOW());
+
+MERGE INTO mate_model_provider (provider_id, name, api_key_prefix, chat_model, api_key, base_url, generate_kwargs, is_custom, is_local, support_model_discovery, support_connection_check, freeze_url, require_api_key, create_time, update_time)
+KEY (provider_id)
+VALUES ('mlx', 'MLX (Local, Apple Silicon)', '', 'OpenAIChatModel', '', '', '{}', FALSE, TRUE, FALSE, TRUE, FALSE, FALSE, NOW(), NOW());
+
+-- ==================== Cloud Model Providers ====================
+
 MERGE INTO mate_model_provider (provider_id, name, api_key_prefix, chat_model, api_key, base_url, generate_kwargs, is_custom, is_local, support_model_discovery, support_connection_check, freeze_url, require_api_key, create_time, update_time)
 KEY (provider_id)
 VALUES ('dashscope', 'DashScope', 'sk-', 'DashScopeChatModel', '', '', '{}', FALSE, FALSE, TRUE, TRUE, FALSE, TRUE, NOW(), NOW());
@@ -81,20 +100,6 @@ VALUES ('gemini', 'Google Gemini', '', 'GeminiChatModel', '', 'https://generativ
 
 MERGE INTO mate_model_provider (provider_id, name, api_key_prefix, chat_model, api_key, base_url, generate_kwargs, is_custom, is_local, support_model_discovery, support_connection_check, freeze_url, require_api_key, create_time, update_time)
 KEY (provider_id)
-VALUES ('ollama', 'Ollama', '', 'OpenAIChatModel', '', 'http://127.0.0.1:11434', '{"max_tokens":null}', FALSE, FALSE, TRUE, TRUE, FALSE, FALSE, NOW(), NOW());
-
-MERGE INTO mate_model_provider (provider_id, name, api_key_prefix, chat_model, api_key, base_url, generate_kwargs, is_custom, is_local, support_model_discovery, support_connection_check, freeze_url, require_api_key, create_time, update_time)
-KEY (provider_id)
-VALUES ('lmstudio', 'LM Studio', '', 'OpenAIChatModel', '', 'http://localhost:1234/v1', '{"max_tokens":null}', FALSE, FALSE, TRUE, TRUE, FALSE, FALSE, NOW(), NOW());
-
-MERGE INTO mate_model_provider (provider_id, name, api_key_prefix, chat_model, api_key, base_url, generate_kwargs, is_custom, is_local, support_model_discovery, support_connection_check, freeze_url, require_api_key, create_time, update_time)
-KEY (provider_id)
-VALUES ('llamacpp', 'llama.cpp (Local)', '', 'OpenAIChatModel', '', '', '{}', FALSE, TRUE, FALSE, TRUE, FALSE, FALSE, NOW(), NOW());
-
-MERGE INTO mate_model_provider (provider_id, name, api_key_prefix, chat_model, api_key, base_url, generate_kwargs, is_custom, is_local, support_model_discovery, support_connection_check, freeze_url, require_api_key, create_time, update_time)
-KEY (provider_id)
-VALUES ('mlx', 'MLX (Local, Apple Silicon)', '', 'OpenAIChatModel', '', '', '{}', FALSE, TRUE, FALSE, TRUE, FALSE, FALSE, NOW(), NOW());
-
 MERGE INTO mate_model_provider (provider_id, name, api_key_prefix, chat_model, api_key, base_url, generate_kwargs, is_custom, is_local, support_model_discovery, support_connection_check, freeze_url, require_api_key, create_time, update_time)
 KEY (provider_id)
 VALUES ('openrouter', 'OpenRouter', 'sk-or-', 'OpenAIChatModel', '', 'https://openrouter.ai/api/v1', '{}', FALSE, FALSE, TRUE, TRUE, TRUE, TRUE, NOW(), NOW());
@@ -111,7 +116,27 @@ MERGE INTO mate_model_provider (provider_id, name, api_key_prefix, chat_model, a
 KEY (provider_id)
 VALUES ('volcengine', 'Volcano Engine', '', 'OpenAIChatModel', '', 'https://ark.cn-beijing.volces.com/api/v3', '{}', FALSE, FALSE, FALSE, TRUE, TRUE, TRUE, NOW(), NOW());
 
--- Default model configurations
+-- ==================== Local model pre-configs (Ollama, disabled by default) ====================
+MERGE INTO mate_model_config (id, name, provider, model_name, description, temperature, max_tokens, top_p, builtin, enabled, is_default, create_time, update_time, deleted)
+KEY (id) VALUES
+(1000000300, 'Gemma 3', 'ollama', 'gemma3:latest', 'Google Gemma 3, lightweight and efficient for local inference', 0.7, 4096, 0.8, TRUE, FALSE, FALSE, NOW(), NOW(), 0);
+MERGE INTO mate_model_config (id, name, provider, model_name, description, temperature, max_tokens, top_p, builtin, enabled, is_default, create_time, update_time, deleted)
+KEY (id) VALUES
+(1000000301, 'Qwen 3', 'ollama', 'qwen3:latest', 'Qwen 3, excellent Chinese language capabilities', 0.7, 4096, 0.8, TRUE, FALSE, FALSE, NOW(), NOW(), 0);
+MERGE INTO mate_model_config (id, name, provider, model_name, description, temperature, max_tokens, top_p, builtin, enabled, is_default, create_time, update_time, deleted)
+KEY (id) VALUES
+(1000000302, 'Llama 3.1', 'ollama', 'llama3.1:latest', 'Meta Llama 3.1, strong general-purpose model', 0.7, 4096, 0.8, TRUE, FALSE, FALSE, NOW(), NOW(), 0);
+MERGE INTO mate_model_config (id, name, provider, model_name, description, temperature, max_tokens, top_p, builtin, enabled, is_default, create_time, update_time, deleted)
+KEY (id) VALUES
+(1000000303, 'DeepSeek R1', 'ollama', 'deepseek-r1:latest', 'DeepSeek R1 reasoning model', 0.7, 4096, 0.8, TRUE, FALSE, FALSE, NOW(), NOW(), 0);
+MERGE INTO mate_model_config (id, name, provider, model_name, description, temperature, max_tokens, top_p, builtin, enabled, is_default, create_time, update_time, deleted)
+KEY (id) VALUES
+(1000000304, 'Mistral', 'ollama', 'mistral:latest', 'Mistral 7B, efficient inference', 0.7, 4096, 0.8, TRUE, FALSE, FALSE, NOW(), NOW(), 0);
+MERGE INTO mate_model_config (id, name, provider, model_name, description, temperature, max_tokens, top_p, builtin, enabled, is_default, create_time, update_time, deleted)
+KEY (id) VALUES
+(1000000305, 'Gemma 4', 'ollama', 'gemma4:latest', 'Google Gemma 4, next-gen high-performance local model', 0.7, 4096, 0.8, TRUE, FALSE, FALSE, NOW(), NOW(), 0);
+
+-- ==================== Cloud model configurations ====================
 MERGE INTO mate_model_config (id, name, provider, model_name, description, temperature, max_tokens, top_p, builtin, enabled, is_default, create_time, update_time, deleted)
 KEY (id)
 VALUES (1000000001, 'Qwen Plus', 'dashscope', 'qwen-plus', 'Default balanced model for daily Q&A and tool calling.', 0.7, 4096, 0.8, TRUE, TRUE, TRUE, NOW(), NOW(), 0);
