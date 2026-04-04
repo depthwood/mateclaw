@@ -101,11 +101,11 @@ VALUES ('openrouter', 'OpenRouter', 'sk-or-', 'OpenAIChatModel', '', 'https://op
 
 MERGE INTO mate_model_provider (provider_id, name, api_key_prefix, chat_model, api_key, base_url, generate_kwargs, is_custom, is_local, support_model_discovery, support_connection_check, freeze_url, require_api_key, create_time, update_time)
 KEY (provider_id)
-VALUES ('zhipu-cn', 'Zhipu AI (China)', '', 'OpenAIChatModel', '', 'https://open.bigmodel.cn/api/paas/v4', '{"completionsPath":"/chat/completions"}', FALSE, FALSE, TRUE, TRUE, TRUE, TRUE, NOW(), NOW());
+VALUES ('zhipu-cn', 'Zhipu AI (China)', '', 'OpenAIChatModel', '', 'https://open.bigmodel.cn/api/paas/v4', '{"completionsPath":"/chat/completions"}', FALSE, FALSE, FALSE, TRUE, TRUE, TRUE, NOW(), NOW());
 
 MERGE INTO mate_model_provider (provider_id, name, api_key_prefix, chat_model, api_key, base_url, generate_kwargs, is_custom, is_local, support_model_discovery, support_connection_check, freeze_url, require_api_key, create_time, update_time)
 KEY (provider_id)
-VALUES ('zhipu-intl', 'Zhipu AI (International)', '', 'OpenAIChatModel', '', 'https://open.z.ai/api/paas/v4', '{"completionsPath":"/chat/completions"}', FALSE, FALSE, TRUE, TRUE, FALSE, TRUE, NOW(), NOW());
+VALUES ('zhipu-intl', 'Zhipu AI (International)', '', 'OpenAIChatModel', '', 'https://api.z.ai/api/paas/v4', '{"completionsPath":"/chat/completions"}', FALSE, FALSE, FALSE, TRUE, TRUE, TRUE, NOW(), NOW());
 
 MERGE INTO mate_model_provider (provider_id, name, api_key_prefix, chat_model, api_key, base_url, generate_kwargs, is_custom, is_local, support_model_discovery, support_connection_check, freeze_url, require_api_key, create_time, update_time)
 KEY (provider_id)
@@ -200,16 +200,14 @@ MERGE INTO mate_model_config (id, name, provider, model_name, description, tempe
 (1000000203, 'Gemini 2.5 Pro', 'openrouter', 'google/gemini-2.5-pro', 'Gemini 2.5 Pro via OpenRouter', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
 (1000000204, 'Llama 4 Maverick', 'openrouter', 'meta-llama/llama-4-maverick', 'Llama 4 Maverick via OpenRouter', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
 (1000000205, 'DeepSeek R1', 'openrouter', 'deepseek/deepseek-r1', 'DeepSeek R1 via OpenRouter', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
-(1000000210, 'GLM-5', 'zhipu-cn', 'glm-5', 'Zhipu latest flagship model', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
-(1000000211, 'GLM-4 Plus', 'zhipu-cn', 'glm-4-plus', 'High-performance balanced model', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
-(1000000212, 'GLM-4 Air', 'zhipu-cn', 'glm-4-air', 'Cost-effective inference model', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
-(1000000213, 'GLM-4 Flash', 'zhipu-cn', 'glm-4-flash', 'Free high-speed model', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
-(1000000214, 'GLM-4 Long', 'zhipu-cn', 'glm-4-long', 'Long-context model with extended context support', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
-(1000000215, 'GLM-4V Plus', 'zhipu-cn', 'glm-4v-plus', 'Multimodal vision model', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
-(1000000220, 'GLM-5', 'zhipu-intl', 'glm-5', 'Zhipu latest flagship model (International)', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
-(1000000221, 'GLM-4 Plus', 'zhipu-intl', 'glm-4-plus', 'High-performance balanced model (International)', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
-(1000000222, 'GLM-4 Air', 'zhipu-intl', 'glm-4-air', 'Cost-effective inference model (International)', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
-(1000000223, 'GLM-4 Flash', 'zhipu-intl', 'glm-4-flash', 'Free high-speed model (International)', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
+(1000000210, 'GLM-5-Turbo', 'zhipu-cn', 'glm-5-turbo', 'Fast inference model (recommended)', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
+(1000000211, 'GLM-5V-Turbo', 'zhipu-cn', 'glm-5v-turbo', 'Multimodal vision model (recommended)', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
+(1000000212, 'GLM-5', 'zhipu-cn', 'glm-5', 'Flagship model', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
+(1000000213, 'GLM-5.1', 'zhipu-cn', 'glm-5.1', 'Latest flagship model', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
+(1000000220, 'GLM-5-Turbo', 'zhipu-intl', 'glm-5-turbo', 'Fast inference model (International, recommended)', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
+(1000000221, 'GLM-5V-Turbo', 'zhipu-intl', 'glm-5v-turbo', 'Multimodal vision model (International, recommended)', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
+(1000000222, 'GLM-5', 'zhipu-intl', 'glm-5', 'Flagship model (International)', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
+(1000000223, 'GLM-5.1', 'zhipu-intl', 'glm-5.1', 'Latest flagship model (International)', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
 (1000000230, 'Doubao 1.5 Pro 256K', 'volcengine', 'doubao-1.5-pro-256k', 'Doubao flagship model with 256K context', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
 (1000000231, 'Doubao 1.5 Pro 32K', 'volcengine', 'doubao-1.5-pro-32k', 'Doubao flagship model with 32K context', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
 (1000000232, 'Doubao 1.5 Lite 32K', 'volcengine', 'doubao-1.5-lite-32k', 'Doubao lite model, cost-effective', 0.7, 4096, 0.8, TRUE, TRUE, FALSE, NOW(), NOW(), 0),
