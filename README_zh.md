@@ -106,10 +106,14 @@ docker compose up -d
 
 从 [GitHub Releases](https://github.com/matevip/mateclaw/releases) 下载安装包：
 
-- **macOS**：`MateClaw-<version>-macOS.zip`
-- **Windows**：`MateClaw-Setup-<version>.exe`
+| 平台 | 文件 | 说明 |
+|------|------|------|
+| **macOS (Apple Silicon)** | `MateClaw_<version>_arm64.dmg` | 推荐 M1/M2/M3/M4 Mac 使用 |
+| **macOS (Apple Silicon)** | `MateClaw_<version>_arm64.zip` | zip 格式备选 |
+| **Windows (x64)** | `MateClaw_<version>_Setup.exe` | 适用于大多数 Windows 电脑 |
+| **Windows (ARM64)** | `MateClaw_<version>_arm64_Setup.exe` | 适用于 ARM 架构 Windows（如 Surface Pro X） |
 
-双击运行。应用内置 Java 后端，支持从 GitHub Releases 自动更新。
+双击运行。应用内置 JRE 21 + Spring Boot 后端，无需安装 Java。支持从 GitHub Releases 自动更新。
 
 > **macOS 用户**：如果系统阻止打开，右键 → 打开 → 再次点击打开，或前往系统设置 → 隐私与安全性 → 仍要打开。
 

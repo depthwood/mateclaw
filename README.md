@@ -106,10 +106,14 @@ docker compose up -d
 
 Download the installer from [GitHub Releases](https://github.com/matevip/mateclaw/releases):
 
-- **macOS**: `MateClaw-<version>-macOS.zip`
-- **Windows**: `MateClaw-Setup-<version>.exe`
+| Platform | File | Notes |
+|----------|------|-------|
+| **macOS (Apple Silicon)** | `MateClaw_<version>_arm64.dmg` | Recommended for M1/M2/M3/M4 Mac |
+| **macOS (Apple Silicon)** | `MateClaw_<version>_arm64.zip` | Alternative zip format |
+| **Windows (x64)** | `MateClaw_<version>_Setup.exe` | For most Windows PCs |
+| **Windows (ARM64)** | `MateClaw_<version>_arm64_Setup.exe` | For ARM-based Windows (e.g. Surface Pro X) |
 
-Double-click to run. The app bundles the Java backend and auto-updates from GitHub Releases.
+Double-click to run. The app bundles JRE 21 + the Spring Boot backend, no Java installation needed. Supports auto-update via GitHub Releases.
 
 > **macOS users**: If macOS blocks the app, right-click → Open → Open again, or go to System Settings → Privacy & Security → Open Anyway.
 
