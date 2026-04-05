@@ -474,6 +474,8 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', handleCodeCopy)
   mobileQuery?.removeEventListener('change', handleMobileChange)
   stopChatGeneration()
+  // 释放所有附件的 ObjectURL，防止内存泄漏
+  revokeAllPreviewUrls()
 })
 
 watch(() => route.query, () => {
@@ -809,6 +811,9 @@ async function handleSendMessage(content: string) {
   const outgoingAttachments = pendingAttachments.value.map((attachment) => ({ ...attachment }))
   const contentParts = buildOutgoingParts(content, outgoingAttachments)
 
+  // 先暂存，发送成功后再清空（失败时恢复）
+  const savedInput = inputText.value
+  const savedAttachments = [...pendingAttachments.value]
   inputText.value = ''
   chatInputRef.value?.clear?.()
   pendingAttachments.value = []
@@ -828,8 +833,13 @@ async function handleSendMessage(content: string) {
         path: a.path,
       })),
     })
+    // 发送成功后释放 ObjectURL
+    revokeAllPreviewUrls()
   } catch (e) {
     console.error('Send message failed:', e)
+    // 发送失败：恢复输入和附件，用户不丢失已上传的文件
+    if (!inputText.value) inputText.value = savedInput
+    if (pendingAttachments.value.length === 0) pendingAttachments.value = savedAttachments
   }
 }
 
@@ -926,9 +936,23 @@ async function handleFileSelect(files: File[]) {
 }
 
 function removeAttachment(key: string) {
+  // revoke 被移除附件的 ObjectURL，防止内存泄漏
+  const removed = pendingAttachments.value.find(a => a.storedName === key || a.path === key)
+  if (removed?.previewUrl?.startsWith('blob:')) {
+    URL.revokeObjectURL(removed.previewUrl)
+  }
   pendingAttachments.value = pendingAttachments.value.filter(
     a => a.storedName !== key && a.path !== key
   )
+}
+
+/** 释放所有 pending 附件的 ObjectURL */
+function revokeAllPreviewUrls() {
+  for (const a of pendingAttachments.value) {
+    if (a.previewUrl?.startsWith('blob:')) {
+      URL.revokeObjectURL(a.previewUrl)
+    }
+  }
 }
 
 function buildOutgoingParts(text: string, attachments: ChatAttachment[]): MessageContentPart[] {

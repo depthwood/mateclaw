@@ -736,14 +736,15 @@ public class ChatController {
 
         String message = request.getMessage();
         Long agentId = request.getAgentId();
+        List<MessageContentPart> contentParts = request.getContentParts();
 
         // 判断当前阶段是否可中断
         // awaiting_approval 阶段不直接中断，只排队
         boolean isAwaitingApproval = approvalService.findPendingByConversation(conversationId) != null;
 
         if (isAwaitingApproval) {
-            // 不可中断：排队但不打断。先持久化再入队（persisted=true）
-            conversationService.saveMessage(conversationId, "user", message, null, "queued");
+            // 不可中断：排队但不打断。先持久化（含 contentParts）再入队（persisted=true）
+            conversationService.saveMessage(conversationId, "user", message, contentParts, "queued");
             boolean queued = streamTracker.enqueueMessage(conversationId, message, agentId, true);
             log.info("Interrupt requested during approval, message queued: conversationId={}, user={}, queueSize={}",
                     conversationId, username, streamTracker.getQueueSize(conversationId));
@@ -754,8 +755,8 @@ public class ChatController {
             ));
         }
 
-        // 可中断：先持久化再打断并入队（persisted=true）
-        conversationService.saveMessage(conversationId, "user", message, null, "queued");
+        // 可中断：先持久化（含 contentParts）再打断并入队（persisted=true）
+        conversationService.saveMessage(conversationId, "user", message, contentParts, "queued");
         boolean interrupted = streamTracker.requestInterrupt(conversationId, message, agentId, true);
         log.info("Interrupt requested: conversationId={}, user={}, interrupted={}, queueSize={}",
                 conversationId, username, interrupted, streamTracker.getQueueSize(conversationId));
@@ -772,6 +773,8 @@ public class ChatController {
     public static class InterruptRequest {
         private String message;
         private Long agentId;
+        /** 结构化内容片段（含图片等附件），排队消息带附件时由前端传入 */
+        private List<MessageContentPart> contentParts;
     }
 
     /**

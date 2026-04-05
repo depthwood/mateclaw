@@ -659,7 +659,11 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     try {
       const res = await fetchWithAuth(`${baseUrl}/api/v1/chat/${conversationId}/interrupt`, {
         method: 'POST',
-        body: JSON.stringify({ message: content, agentId }),
+        body: JSON.stringify({
+          message: content,
+          agentId,
+          contentParts: options.contentParts || [],
+        }),
       })
       const result = await res.json()
 

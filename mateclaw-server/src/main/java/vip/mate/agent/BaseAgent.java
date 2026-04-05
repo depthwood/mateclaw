@@ -276,21 +276,24 @@ public abstract class BaseAgent {
     /**
      * 构建当前用户消息的 UserMessage（含 multimodal 图片注入）。
      * <p>
-     * 从 DB 读取最新的 user 消息的 contentParts，提取图片附件并注入 Media。
-     * 用于 StateGraphReActAgent.buildInitialState 等需要构建当前消息的场景。
+     * 从 DB 读取最后一条 user 消息的 contentParts，提取图片附件并注入 Media。
+     * 不依赖文本相等匹配（避免重复文本误绑定到错误轮次），而是直接取最后一条 user 消息，
+     * 因为 buildInitialState 在 saveMessage 之后调用，最后一条 user 消息就是当前消息。
      *
      * @param conversationId 会话 ID
-     * @param userMessageText 用户消息文本
+     * @param userMessageText 用户消息文本（作为 fallback 内容）
      * @return 带图片 Media 的 UserMessage（如果有图片附件），否则纯文本 UserMessage
      */
     protected UserMessage buildCurrentUserMessage(String conversationId, String userMessageText) {
         try {
             List<MessageEntity> history = conversationService.listMessages(conversationId);
-            // 倒序找最新的 user 消息（内容匹配）
+            // 倒序取最后一条 user 消息（buildInitialState 在 saveMessage 后调用，所以最后一条就是当前消息）
             for (int i = history.size() - 1; i >= 0; i--) {
                 MessageEntity msg = history.get(i);
-                if ("user".equals(msg.getRole()) && userMessageText.equals(msg.getContent())) {
-                    return buildUserMessage(msg, userMessageText);
+                if ("user".equals(msg.getRole())) {
+                    // 用 DB 中的实际内容（可能包含 contentParts），不用传入的 text
+                    String content = conversationService.renderMessageContent(msg);
+                    return buildUserMessage(msg, content != null && !content.isBlank() ? content : userMessageText);
                 }
             }
         } catch (Exception e) {
