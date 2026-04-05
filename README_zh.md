@@ -30,7 +30,7 @@
 >
 > **多 Agent 编排** — ReAct（思考→行动→观察循环）和 Plan-and-Execute（自动将复杂任务拆解为有序子步骤）。创建多个独立 Agent，各有专属人格和工具。
 >
-> **工具与技能系统** — 内置工具（网络搜索、日期时间）+ MCP 协议接入外部工具。从 ClawHub 市场或自定义源安装技能包。
+> **工具与技能系统** — 内置工具（网络搜索、日期时间）+ MCP 协议接入外部工具。预置 GitHub 和 Filesystem MCP 服务，启用即用。从 ClawHub 市场或自定义源安装技能包。
 >
 > **多层记忆** — 短期上下文窗口自动压缩、事件驱动的对话后记忆提取、工作空间文件（PROFILE.md / MEMORY.md / 每日笔记）、定时记忆整合。
 >
@@ -198,7 +198,8 @@ mateclaw/
 ### 工具与技能系统
 
 - **内置工具** — 网络搜索（Serper/Tavily）、日期时间、工作空间记忆读写
-- **MCP 协议** — 通过 Model Context Protocol 接入外部工具（stdio 和 SSE 传输）
+- **MCP 协议** — 通过 Model Context Protocol 接入外部工具（stdio、SSE、Streamable HTTP 传输）。在 Web 界面中完成全生命周期管理 — 添加、编辑、启用/禁用、测试连接
+- **预置 MCP 服务** — GitHub（`@modelcontextprotocol/server-github`）和 Filesystem 开箱即用。在 MCP 管理页面启用并填入 Token 即可，无需改代码
 - **技能包** — 安装/卸载带 `SKILL.md` 清单的技能包
 - **ClawHub 市场** — 从 ClawHub 注册中心浏览和安装技能
 - **工作空间技能** — 基于约定的技能目录 `~/.mateclaw/skills/{name}/`

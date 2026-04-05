@@ -30,7 +30,7 @@ A personal AI assistant system built with **Java + Vue 3**, powered by [Spring A
 >
 > **Multi-Agent Orchestration** — ReAct (Thought → Action → Observation loop) and Plan-and-Execute (auto-decompose complex tasks into ordered sub-steps). Create multiple independent agents, each with their own personality and tools.
 >
-> **Tool & Skill System** — Built-in tools (web search, date/time) + MCP protocol for external tool integration. Install skill packages from ClawHub marketplace or custom sources.
+> **Tool & Skill System** — Built-in tools (web search, date/time) + MCP protocol for external tool integration. Pre-configured GitHub and Filesystem MCP servers — enable and go. Install skill packages from ClawHub marketplace or custom sources.
 >
 > **Multi-Layer Memory** — Short-term context window with auto-compression, event-driven post-conversation memory extraction, workspace files (PROFILE.md / MEMORY.md / daily notes), and scheduled memory consolidation.
 >
@@ -198,7 +198,8 @@ mateclaw/
 ### Tool & Skill System
 
 - **Built-in Tools** — Web search (Serper/Tavily), date/time, workspace memory read/write
-- **MCP Protocol** — Connect external tools via Model Context Protocol (stdio and SSE transports)
+- **MCP Protocol** — Connect external tools via Model Context Protocol (stdio, SSE, and Streamable HTTP transports). Full lifecycle management in the web UI — add, edit, enable/disable, and test connections
+- **Pre-configured MCP Servers** — GitHub (`@modelcontextprotocol/server-github`) and Filesystem ship out-of-the-box. Enable from the MCP management page and fill in your token — no code changes needed
 - **Skill Packages** — Install/uninstall skill packages with `SKILL.md` manifests
 - **ClawHub Marketplace** — Browse and install skills from the ClawHub registry
 - **Workspace Skills** — Convention-based skill directory at `~/.mateclaw/skills/{name}/`
