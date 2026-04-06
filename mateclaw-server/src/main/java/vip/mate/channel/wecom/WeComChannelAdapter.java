@@ -50,7 +50,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *   <li>bot_id: 机器人 ID</li>
  *   <li>secret: 机器人 Secret</li>
  *   <li>welcome_text: 欢迎消息（可选）</li>
- *   <li>media_download_enabled: 是否下载媒体文件（默认 false）</li>
+ *   <li>media_download_enabled: 是否下载媒体文件（默认 true）</li>
  *   <li>media_dir: 媒体文件保存目录（默认 data/media）</li>
  * </ul>
  *
@@ -85,6 +85,18 @@ public class WeComChannelAdapter extends AbstractChannelAdapter {
     private static final String CMD_SEND_MSG = "aibot_send_msg";
     private static final String CMD_CALLBACK = "aibot_msg_callback";
     private static final String CMD_EVENT_CALLBACK = "aibot_event_callback";
+
+    // ==================== 媒体上传命令常量 ====================
+
+    private static final String CMD_UPLOAD_INIT = "aibot_upload_media_init";
+    private static final String CMD_UPLOAD_CHUNK = "aibot_upload_media_chunk";
+    private static final String CMD_UPLOAD_FINISH = "aibot_upload_media_finish";
+
+    /** 上传分块大小：512KB */
+    private static final int UPLOAD_CHUNK_SIZE = 512 * 1024;
+
+    /** 上传 ACK 超时：30 秒（大文件上传需要更长超时） */
+    private static final long UPLOAD_ACK_TIMEOUT_MS = 30_000;
 
     // ==================== 运行时状态 ====================
 
@@ -122,6 +134,14 @@ public class WeComChannelAdapter extends AbstractChannelAdapter {
 
     /** 记录消息中 reqId -> frame 的映射，用于 reply_stream 回复 */
     private final ConcurrentHashMap<String, Map<String, Object>> pendingFrames = new ConcurrentHashMap<>();
+
+    /** 媒体上传串行锁（每个适配器实例同一时间只允许一个上传） */
+    private final Semaphore uploadLock = new Semaphore(1);
+
+    /** 回复上下文：replyToken -> (frameReqId, processingStreamId)，用于 sendContentParts 回写 */
+    private final ConcurrentHashMap<String, WeComReplyContext> replyContexts = new ConcurrentHashMap<>();
+
+    private record WeComReplyContext(String frameReqId, String processingStreamId) {}
 
     public WeComChannelAdapter(ChannelEntity channelEntity,
                                ChannelMessageRouter messageRouter,
@@ -196,6 +216,7 @@ public class WeComChannelAdapter extends AbstractChannelAdapter {
         replyQueues.clear();
         pendingFrames.clear();
         processedMessageIds.clear();
+        replyContexts.clear();
 
         this.httpClient = null;
         log.info("[wecom] WeCom bot channel stopped");
@@ -222,6 +243,7 @@ public class WeComChannelAdapter extends AbstractChannelAdapter {
         pendingAcks.clear();
         replyQueues.clear();
         pendingFrames.clear();
+        replyContexts.clear();
         missedPongCount.set(0);
 
         if (this.httpClient == null) {
@@ -499,7 +521,7 @@ public class WeComChannelAdapter extends AbstractChannelAdapter {
                     Map<String, Object> imgBody = (Map<String, Object>) body.getOrDefault("image", Map.of());
                     String url = (String) imgBody.getOrDefault("url", "");
                     String aesKey = (String) imgBody.getOrDefault("aeskey", "");
-                    if (getConfigBoolean("media_download_enabled", false) && !url.isBlank()) {
+                    if (getConfigBoolean("media_download_enabled", true) && !url.isBlank()) {
                         String localPath = downloadAndDecryptMedia(url, aesKey, msgId, "image.jpg");
                         if (localPath != null) {
                             contentParts.add(MessageContentPart.image(localPath, url));
@@ -526,7 +548,7 @@ public class WeComChannelAdapter extends AbstractChannelAdapter {
                     String url = (String) fileBody.getOrDefault("url", "");
                     String aesKey = (String) fileBody.getOrDefault("aeskey", "");
                     String filename = (String) fileBody.getOrDefault("filename", "file.bin");
-                    if (getConfigBoolean("media_download_enabled", false) && !url.isBlank()) {
+                    if (getConfigBoolean("media_download_enabled", true) && !url.isBlank()) {
                         String localPath = downloadAndDecryptMedia(url, aesKey, msgId, filename);
                         if (localPath != null) {
                             contentParts.add(MessageContentPart.file(localPath, filename, null));
@@ -608,6 +630,10 @@ public class WeComChannelAdapter extends AbstractChannelAdapter {
                             "wecom_chatid", chatId
                     ))
                     .build();
+
+            // 保存回复上下文，供 sendContentParts / renderAndSend 使用
+            String replyToken = isGroup ? chatId : senderId;
+            replyContexts.put(replyToken, new WeComReplyContext(frameReqId, processingStreamId));
 
             log.info("[wecom] Received message: sender={}, chatType={}, msgType={}, textLen={}",
                     senderId.length() > 20 ? senderId.substring(0, 20) : senderId,
@@ -695,9 +721,8 @@ public class WeComChannelAdapter extends AbstractChannelAdapter {
      */
     @Override
     public void renderAndSend(String targetId, String content) {
-        // 尝试查找匹配的 pending frame（通过 target 反查）
-        // renderAndSend 在 ChannelMessageRouter.processMessage() 中被调用
-        // 此时 targetId 是 replyToken（userId 或 chatId）
+        // 消费回复上下文（如果有的话）
+        WeComReplyContext ctx = replyContexts.remove(targetId);
 
         // 先进行正常的内容渲染（过滤 thinking、分割长文本）
         boolean filterThinking = getConfigBoolean("filter_thinking", true);
@@ -708,29 +733,159 @@ public class WeComChannelAdapter extends AbstractChannelAdapter {
         List<String> segments = vip.mate.channel.ChannelMessageRenderer.renderForChannel(
                 content, filterThinking, filterToolMessages, format, maxLen);
 
+        boolean first = true;
         for (String segment : segments) {
-            sendMessage(targetId, segment);
+            // 第一条分段用 processingStreamId 覆盖"思考中..."
+            if (first && ctx != null && ctx.processingStreamId() != null
+                    && !ctx.processingStreamId().isBlank()) {
+                replyStream(ctx.frameReqId(), ctx.processingStreamId(), segment, true);
+                first = false;
+            } else {
+                sendMessage(targetId, segment);
+            }
         }
     }
 
     @Override
     public void sendContentParts(String targetId, List<MessageContentPart> parts) {
+        WeComReplyContext ctx = replyContexts.remove(targetId);
+        boolean sentText = false;
+        boolean firstText = true;
+
         for (MessageContentPart part : parts) {
             if (part == null) continue;
-            switch (part.getType()) {
-                case "text" -> { if (part.getText() != null) sendMessage(targetId, part.getText()); }
-                case "image" -> {
-                    String imgUrl = part.getFileUrl() != null ? part.getFileUrl() : part.getMediaId();
-                    if (imgUrl != null) {
-                        sendMessage(targetId, "![image](" + imgUrl + ")");
+            try {
+                switch (part.getType()) {
+                    case "text" -> {
+                        if (part.getText() != null && !part.getText().isBlank()) {
+                            // 第一条文本用 processingStreamId 覆盖"思考中..."
+                            if (firstText && ctx != null && ctx.processingStreamId() != null
+                                    && !ctx.processingStreamId().isBlank()) {
+                                replyStream(ctx.frameReqId(), ctx.processingStreamId(), part.getText(), true);
+                                firstText = false;
+                            } else {
+                                sendMessage(targetId, part.getText());
+                            }
+                            sentText = true;
+                        }
+                    }
+                    case "image" -> sendImagePart(targetId, part, ctx);
+                    case "file" -> sendFilePart(targetId, part, ctx);
+                    default -> {
+                        if (part.getText() != null) {
+                            sendMessage(targetId, part.getText());
+                            sentText = true;
+                        }
                     }
                 }
-                case "file" -> {
-                    String fileName = part.getFileName() != null ? part.getFileName() : "file";
-                    sendMessage(targetId, "[文件: " + fileName + "]");
-                }
-                default -> { if (part.getText() != null) sendMessage(targetId, part.getText()); }
+            } catch (Exception e) {
+                log.error("[wecom] Failed to send content part ({}): {}", part.getType(), e.getMessage());
+                sendFallbackText(targetId, part);
             }
+        }
+
+        // 如果没有发送文本但有处理指示器，清除"思考中..."
+        if (!sentText && ctx != null && ctx.processingStreamId() != null
+                && !ctx.processingStreamId().isBlank()) {
+            try {
+                replyStream(ctx.frameReqId(), ctx.processingStreamId(), "✅ Done", true);
+            } catch (Exception e) {
+                log.debug("[wecom] Failed to clear processing indicator: {}", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 发送图片部分：压缩 → 上传 → 发送 media_id
+     */
+    private void sendImagePart(String targetId, MessageContentPart part, WeComReplyContext ctx) {
+        byte[] imageBytes = resolveFileBytes(part);
+        if (imageBytes == null) {
+            sendFallbackText(targetId, part);
+            return;
+        }
+
+        String fileName = part.getFileName() != null ? part.getFileName() : "image.jpg";
+        imageBytes = WeComImageCompressor.compressIfNeeded(imageBytes, fileName);
+
+        String mediaId = uploadMedia(imageBytes, fileName, "image");
+        if (mediaId != null) {
+            String frameReqId = ctx != null ? ctx.frameReqId() : null;
+            sendMediaMessage(targetId, mediaId, "image", frameReqId);
+        } else {
+            sendFallbackText(targetId, part);
+        }
+    }
+
+    /**
+     * 发送文件部分：上传 → 发送 media_id
+     */
+    private void sendFilePart(String targetId, MessageContentPart part, WeComReplyContext ctx) {
+        byte[] fileBytes = resolveFileBytes(part);
+        if (fileBytes == null) {
+            sendFallbackText(targetId, part);
+            return;
+        }
+
+        String fileName = part.getFileName() != null ? part.getFileName() : "file.bin";
+        String mediaId = uploadMedia(fileBytes, fileName, "file");
+        if (mediaId != null) {
+            String frameReqId = ctx != null ? ctx.frameReqId() : null;
+            sendMediaMessage(targetId, mediaId, "file", frameReqId);
+        } else {
+            sendFallbackText(targetId, part);
+        }
+    }
+
+    /**
+     * 从 MessageContentPart 解析文件字节：优先本地路径，其次 URL 下载
+     */
+    private byte[] resolveFileBytes(MessageContentPart part) {
+        // 本地路径
+        if (part.getPath() != null && !part.getPath().isBlank()) {
+            try {
+                Path p = Path.of(part.getPath());
+                if (Files.exists(p)) {
+                    return Files.readAllBytes(p);
+                }
+            } catch (Exception e) {
+                log.debug("[wecom] Failed to read local file {}: {}", part.getPath(), e.getMessage());
+            }
+        }
+        // URL 下载
+        String url = part.getFileUrl();
+        if (url != null && !url.isBlank() && httpClient != null) {
+            try {
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(url))
+                        .timeout(Duration.ofSeconds(30))
+                        .GET()
+                        .build();
+                HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                if (response.statusCode() == 200) {
+                    return response.body();
+                }
+            } catch (Exception e) {
+                log.debug("[wecom] Failed to download file from {}: {}", url, e.getMessage());
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 降级发送：上传失败时退回 Markdown 文本
+     */
+    private void sendFallbackText(String targetId, MessageContentPart part) {
+        switch (part.getType()) {
+            case "image" -> {
+                String url = part.getFileUrl() != null ? part.getFileUrl() : part.getMediaId();
+                if (url != null) sendMessage(targetId, "![image](" + url + ")");
+            }
+            case "file" -> {
+                String name = part.getFileName() != null ? part.getFileName() : "file";
+                sendMessage(targetId, "[文件: " + name + "]");
+            }
+            default -> { if (part.getText() != null) sendMessage(targetId, part.getText()); }
         }
     }
 
@@ -780,6 +935,172 @@ public class WeComChannelAdapter extends AbstractChannelAdapter {
                 "body", body
         );
         sendFrameWithAck(reqId, frame);
+    }
+
+    // ==================== 媒体上传协议 ====================
+
+    /**
+     * 通过 WebSocket 分块上传文件到企业微信
+     * <p>
+     * 三阶段协议：
+     *   1. Init: 发送文件元数据 → 获得 upload_id
+     *   2. Chunks: 发送 base64 编码的 512KB 分块
+     *   3. Finish: 完成上传 → 获得 media_id
+     *
+     * @param fileBytes  文件内容
+     * @param fileName   文件名
+     * @param mediaType  媒体类型："image" / "file" / "voice" / "video"
+     * @return media_id，失败返回 null
+     */
+    @SuppressWarnings("unchecked")
+    private String uploadMedia(byte[] fileBytes, String fileName, String mediaType) {
+        if (webSocket == null || fileBytes == null || fileBytes.length == 0) {
+            return null;
+        }
+        boolean acquired = false;
+        try {
+            acquired = uploadLock.tryAcquire(60, TimeUnit.SECONDS);
+            if (!acquired) {
+                log.warn("[wecom] Upload lock timeout, another upload may be in progress");
+                return null;
+            }
+
+            String md5 = md5Hex(fileBytes);
+            int totalChunks = (int) Math.ceil((double) fileBytes.length / UPLOAD_CHUNK_SIZE);
+
+            // Phase 1: Init
+            String initReqId = generateReqId(CMD_UPLOAD_INIT);
+            Map<String, Object> initBody = new LinkedHashMap<>();
+            initBody.put("type", mediaType);
+            initBody.put("filename", fileName);
+            initBody.put("total_size", fileBytes.length);
+            initBody.put("total_chunks", totalChunks);
+            initBody.put("md5", md5);
+
+            Map<String, Object> initFrame = Map.of(
+                    "cmd", CMD_UPLOAD_INIT,
+                    "headers", Map.of("req_id", initReqId),
+                    "body", initBody
+            );
+            Map<String, Object> initAck = sendFrameWithAckBlocking(initReqId, initFrame, UPLOAD_ACK_TIMEOUT_MS);
+            Map<String, Object> initAckBody = (Map<String, Object>) initAck.getOrDefault("body", Map.of());
+            String uploadId = (String) initAckBody.getOrDefault("upload_id", "");
+            if (uploadId.isBlank()) {
+                log.error("[wecom] Upload init failed: empty upload_id");
+                return null;
+            }
+            log.debug("[wecom] Upload init: upload_id={}, chunks={}", uploadId.substring(0, Math.min(20, uploadId.length())), totalChunks);
+
+            // Phase 2: Chunks
+            for (int i = 0; i < totalChunks; i++) {
+                int offset = i * UPLOAD_CHUNK_SIZE;
+                int length = Math.min(UPLOAD_CHUNK_SIZE, fileBytes.length - offset);
+                byte[] chunk = Arrays.copyOfRange(fileBytes, offset, offset + length);
+                String base64Data = Base64.getEncoder().encodeToString(chunk);
+
+                String chunkReqId = generateReqId(CMD_UPLOAD_CHUNK);
+                Map<String, Object> chunkBody = new LinkedHashMap<>();
+                chunkBody.put("upload_id", uploadId);
+                chunkBody.put("chunk_index", i);
+                chunkBody.put("data", base64Data);
+
+                Map<String, Object> chunkFrame = Map.of(
+                        "cmd", CMD_UPLOAD_CHUNK,
+                        "headers", Map.of("req_id", chunkReqId),
+                        "body", chunkBody
+                );
+                sendFrameWithAckBlocking(chunkReqId, chunkFrame, UPLOAD_ACK_TIMEOUT_MS);
+            }
+
+            // Phase 3: Finish
+            String finishReqId = generateReqId(CMD_UPLOAD_FINISH);
+            Map<String, Object> finishFrame = Map.of(
+                    "cmd", CMD_UPLOAD_FINISH,
+                    "headers", Map.of("req_id", finishReqId),
+                    "body", Map.of("upload_id", uploadId)
+            );
+            Map<String, Object> finishAck = sendFrameWithAckBlocking(finishReqId, finishFrame, UPLOAD_ACK_TIMEOUT_MS);
+            Map<String, Object> finishAckBody = (Map<String, Object>) finishAck.getOrDefault("body", Map.of());
+            String mediaId = (String) finishAckBody.getOrDefault("media_id", "");
+            if (mediaId.isBlank()) {
+                log.error("[wecom] Upload finish failed: empty media_id");
+                return null;
+            }
+
+            log.info("[wecom] Upload completed: media_id={}, type={}, size={}KB",
+                    mediaId.substring(0, Math.min(20, mediaId.length())), mediaType, fileBytes.length / 1024);
+            return mediaId;
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[wecom] Upload interrupted");
+            return null;
+        } catch (Exception e) {
+            log.error("[wecom] Upload failed for {}: {}", fileName, e.getMessage(), e);
+            return null;
+        } finally {
+            if (acquired) {
+                uploadLock.release();
+            }
+        }
+    }
+
+    /**
+     * 发送帧并阻塞等待 ACK 响应（用于上传协议需要读取返回值的场景）
+     *
+     * @return ACK 帧 Map
+     * @throws RuntimeException 超时或错误
+     */
+    private Map<String, Object> sendFrameWithAckBlocking(String reqId, Map<String, Object> frame, long timeoutMs) {
+        CompletableFuture<Map<String, Object>> ackFuture = new CompletableFuture<>();
+        pendingAcks.put(reqId, ackFuture);
+        sendFrame(frame);
+        try {
+            return ackFuture.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            pendingAcks.remove(reqId);
+            throw new RuntimeException("Upload ACK timeout for reqId=" + reqId, e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException("Upload ACK error for reqId=" + reqId, e.getCause());
+        } catch (InterruptedException e) {
+            pendingAcks.remove(reqId);
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Upload interrupted", e);
+        }
+    }
+
+    /**
+     * 使用 media_id 发送媒体消息
+     *
+     * @param targetId   目标 ID（userId 或 chatId）
+     * @param mediaId    上传后获得的 media_id
+     * @param mediaType  媒体类型（image / file / voice / video）
+     * @param frameReqId 原始消息 frameReqId（非 null 时通过 reply 路径，null 时通过主动推送）
+     */
+    private void sendMediaMessage(String targetId, String mediaId, String mediaType, String frameReqId) {
+        Map<String, Object> mediaBody = new LinkedHashMap<>();
+        mediaBody.put("msgtype", mediaType);
+        mediaBody.put(mediaType, Map.of("media_id", mediaId));
+
+        if (frameReqId != null && !frameReqId.isBlank()) {
+            // Reply 路径：使用 aibot_respond_msg
+            Map<String, Object> frame = Map.of(
+                    "cmd", CMD_RESPONSE,
+                    "headers", Map.of("req_id", frameReqId),
+                    "body", mediaBody
+            );
+            sendFrameWithAck(frameReqId, frame);
+        } else {
+            // 主动推送路径：使用 aibot_send_msg
+            mediaBody.put("chatid", targetId);
+            String reqId = generateReqId(CMD_SEND_MSG);
+            Map<String, Object> frame = Map.of(
+                    "cmd", CMD_SEND_MSG,
+                    "headers", Map.of("req_id", reqId),
+                    "body", mediaBody
+            );
+            sendFrameWithAck(reqId, frame);
+        }
     }
 
     // ==================== 帧发送基础设施 ====================
@@ -955,14 +1276,31 @@ public class WeComChannelAdapter extends AbstractChannelAdapter {
         try {
             MessageDigest md = MessageDigest.getInstance("MD5");
             byte[] hash = md.digest(input.getBytes());
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hash) {
-                sb.append(String.format("%02x", b));
-            }
-            return sb.toString();
+            return bytesToHex(hash);
         } catch (Exception e) {
             return Integer.toHexString(input.hashCode());
         }
+    }
+
+    /**
+     * MD5 哈希（字节数组输入）
+     */
+    private String md5Hex(byte[] input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            byte[] hash = md.digest(input);
+            return bytesToHex(hash);
+        } catch (Exception e) {
+            return "0";
+        }
+    }
+
+    private String bytesToHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
     }
 
     // ==================== 回复队列内部类 ====================

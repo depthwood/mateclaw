@@ -9,12 +9,18 @@ import vip.mate.channel.model.ChannelEntity;
 import vip.mate.workspace.conversation.model.MessageContentPart;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -39,7 +45,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <ul>
  *   <li>bot_token: iLink Bot Token（扫码登录获取）</li>
  *   <li>base_url: API 基础地址（默认 https://ilinkai.weixin.qq.com）</li>
- *   <li>media_download_enabled: 是否下载媒体文件（默认 false）</li>
+ *   <li>media_download_enabled: 是否下载媒体文件（默认 true）</li>
  *   <li>media_dir: 媒体文件保存目录（默认 data/media）</li>
  * </ul>
  *
@@ -77,6 +83,32 @@ public class WeixinChannelAdapter extends AbstractChannelAdapter {
     /** 用户最新 context_token 缓存（用于主动推送） */
     private final ConcurrentHashMap<String, String> userContextTokens = new ConcurrentHashMap<>();
 
+    // ==================== 输入中提示 ====================
+
+    /** 输入提示 ticket 缓存：userId -> (ticket, expireTime) */
+    private final ConcurrentHashMap<String, TypingTicketEntry> typingTickets = new ConcurrentHashMap<>();
+
+    /** 输入提示刷新任务：userId -> ScheduledFuture */
+    private final ConcurrentHashMap<String, ScheduledFuture<?>> typingTasks = new ConcurrentHashMap<>();
+
+    /** 输入提示调度器 */
+    private ScheduledExecutorService typingScheduler;
+
+    /** Typing ticket 缓存 24 小时 */
+    private static final long TYPING_TICKET_TTL_MS = 24 * 60 * 60 * 1000L;
+
+    /** 输入提示刷新间隔 5 秒 */
+    private static final long TYPING_REFRESH_INTERVAL_MS = 5_000;
+
+    private record TypingTicketEntry(String ticket, long expireAt) {
+        boolean isValid() { return !ticket.isBlank() && System.currentTimeMillis() < expireAt; }
+    }
+
+    // ==================== 文件上传 ====================
+
+    /** 用于文件 URL 下载的 HttpClient */
+    private HttpClient uploadHttpClient;
+
     public WeixinChannelAdapter(ChannelEntity channelEntity,
                                 ChannelMessageRouter messageRouter,
                                 ObjectMapper objectMapper) {
@@ -100,6 +132,12 @@ public class WeixinChannelAdapter extends AbstractChannelAdapter {
         }
 
         client = new ILinkClient(botToken, baseUrl, objectMapper);
+        uploadHttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+        typingScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "weixin-typing-" + channelEntity.getId());
+            t.setDaemon(true);
+            return t;
+        });
 
         // 启动长轮询线程
         stopSignal.set(false);
@@ -115,6 +153,16 @@ public class WeixinChannelAdapter extends AbstractChannelAdapter {
     @Override
     protected void doStop() {
         stopSignal.set(true);
+
+        // 停止所有输入提示任务
+        typingTasks.values().forEach(f -> f.cancel(false));
+        typingTasks.clear();
+        typingTickets.clear();
+        if (typingScheduler != null) {
+            typingScheduler.shutdownNow();
+            typingScheduler = null;
+        }
+
         if (pollThread != null) {
             pollThread.interrupt();
             try {
@@ -125,6 +173,7 @@ public class WeixinChannelAdapter extends AbstractChannelAdapter {
             pollThread = null;
         }
         client = null;
+        uploadHttpClient = null;
         log.info("[weixin] Channel stopped: {}", channelEntity.getName());
     }
 
@@ -217,7 +266,7 @@ public class WeixinChannelAdapter extends AbstractChannelAdapter {
         List<String> textParts = new ArrayList<>();
 
         List<Map<String, Object>> itemList = (List<Map<String, Object>>) msg.getOrDefault("item_list", List.of());
-        boolean mediaDownloadEnabled = getConfigBoolean("media_download_enabled", false);
+        boolean mediaDownloadEnabled = getConfigBoolean("media_download_enabled", true);
         String mediaDir = getConfigString("media_dir", "data/media");
 
         for (Map<String, Object> item : itemList) {
@@ -243,10 +292,22 @@ public class WeixinChannelAdapter extends AbstractChannelAdapter {
                             part.setContentType("image/*");
                             contentParts.add(part);
                         } else {
-                            textParts.add("[图片: 下载失败]");
+                            // 下载失败，尝试构建 CDN URL
+                            String cdnUrl = buildCdnUrl(item, "image_item");
+                            if (cdnUrl != null) {
+                                contentParts.add(MessageContentPart.image(cdnUrl, cdnUrl));
+                            } else {
+                                textParts.add("[图片: 下载失败]");
+                            }
                         }
                     } else {
-                        textParts.add("[图片]");
+                        // 未启用下载，但仍然传递 CDN URL（供多模态分析）
+                        String cdnUrl = buildCdnUrl(item, "image_item");
+                        if (cdnUrl != null) {
+                            contentParts.add(MessageContentPart.image(cdnUrl, cdnUrl));
+                        } else {
+                            textParts.add("[图片]");
+                        }
                     }
                 }
                 case 3 -> {
@@ -262,10 +323,10 @@ public class WeixinChannelAdapter extends AbstractChannelAdapter {
                 }
                 case 4 -> {
                     // File
+                    Map<String, Object> fileItemMap = (Map<String, Object>) item.getOrDefault("file_item", Map.of());
+                    String fileName = getStr(fileItemMap, "file_name");
+                    if (fileName.isBlank()) fileName = "file.bin";
                     if (mediaDownloadEnabled) {
-                        Map<String, Object> fileItem = (Map<String, Object>) item.getOrDefault("file_item", Map.of());
-                        String fileName = getStr(fileItem, "file_name");
-                        if (fileName.isBlank()) fileName = "file.bin";
                         String path = downloadMediaItem(item, "file_item", fileName, mediaDir);
                         if (path != null) {
                             MessageContentPart part = new MessageContentPart();
@@ -274,10 +335,10 @@ public class WeixinChannelAdapter extends AbstractChannelAdapter {
                             part.setFileName(fileName);
                             contentParts.add(part);
                         } else {
-                            textParts.add("[文件: 下载失败]");
+                            textParts.add("[文件: " + fileName + " 下载失败]");
                         }
                     } else {
-                        textParts.add("[文件]");
+                        textParts.add("[文件: " + fileName + "]");
                     }
                 }
                 case 5 -> {
@@ -291,7 +352,17 @@ public class WeixinChannelAdapter extends AbstractChannelAdapter {
                             part.setContentType("video/*");
                             contentParts.add(part);
                         } else {
-                            textParts.add("[视频: 下载失败]");
+                            // 尝试构建 CDN URL
+                            String cdnUrl = buildCdnUrl(item, "video_item");
+                            if (cdnUrl != null) {
+                                MessageContentPart part = new MessageContentPart();
+                                part.setType("video");
+                                part.setFileUrl(cdnUrl);
+                                part.setContentType("video/*");
+                                contentParts.add(part);
+                            } else {
+                                textParts.add("[视频: 下载失败]");
+                            }
                         }
                     } else {
                         textParts.add("[视频]");
@@ -339,6 +410,9 @@ public class WeixinChannelAdapter extends AbstractChannelAdapter {
                 fromUserId.length() > 20 ? fromUserId.substring(0, 20) : fromUserId,
                 groupId.length() > 20 ? groupId.substring(0, 20) : groupId,
                 textContent.length());
+
+        // 启动"输入中..."提示
+        startTyping(fromUserId, contextToken);
 
         onMessage(channelMessage);
     }
@@ -401,9 +475,240 @@ public class WeixinChannelAdapter extends AbstractChannelAdapter {
                 return;
             }
 
+            // 发送前停止输入提示，发送后重新启动（模拟连续输入）
+            stopTyping(toUserId);
             client.sendText(toUserId, content, contextToken);
         } catch (Exception e) {
             log.error("[weixin] Failed to send message: {}", e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void sendContentParts(String targetId, List<MessageContentPart> parts) {
+        if (client == null || parts == null || parts.isEmpty()) {
+            return;
+        }
+
+        String[] split = targetId.split("\\|", 2);
+        String contextToken = split.length > 0 ? split[0] : "";
+        String toUserId = split.length > 1 ? split[1] : "";
+
+        if (toUserId.isBlank() || contextToken.isBlank()) {
+            log.warn("[weixin] sendContentParts: missing userId or contextToken");
+            return;
+        }
+
+        // 停止输入提示
+        stopTyping(toUserId);
+
+        for (MessageContentPart part : parts) {
+            if (part == null) continue;
+            try {
+                switch (part.getType()) {
+                    case "text" -> {
+                        if (part.getText() != null && !part.getText().isBlank()) {
+                            client.sendText(toUserId, part.getText(), contextToken);
+                        }
+                    }
+                    case "image" -> sendImagePart(toUserId, contextToken, part);
+                    case "file" -> sendFilePart(toUserId, contextToken, part);
+                    case "video" -> sendVideoPart(toUserId, contextToken, part);
+                    default -> {
+                        if (part.getText() != null && !part.getText().isBlank()) {
+                            client.sendText(toUserId, part.getText(), contextToken);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.error("[weixin] Failed to send content part ({}): {}", part.getType(), e.getMessage());
+                // 降级为文本
+                sendFallbackText(targetId, part);
+            }
+        }
+    }
+
+    @Override
+    public void renderAndSend(String targetId, String content) {
+        // 停止输入提示
+        String[] split = targetId.split("\\|", 2);
+        String toUserId = split.length > 1 ? split[1] : "";
+        if (!toUserId.isBlank()) {
+            stopTyping(toUserId);
+        }
+
+        // 调用父类默认渲染逻辑
+        boolean filterThinking = getConfigBoolean("filter_thinking", true);
+        boolean filterToolMessages = getConfigBoolean("filter_tool_messages", true);
+        String format = getConfigString("message_format", "auto");
+        int maxLen = vip.mate.channel.ChannelMessageRenderer.PLATFORM_LIMITS.getOrDefault(getChannelType(), 2048);
+
+        List<String> segments = vip.mate.channel.ChannelMessageRenderer.renderForChannel(
+                content, filterThinking, filterToolMessages, format, maxLen);
+        for (String segment : segments) {
+            sendMessage(targetId, segment);
+        }
+    }
+
+    // ==================== 媒体上传发送 ====================
+
+    private void sendImagePart(String toUserId, String contextToken, MessageContentPart part) throws Exception {
+        byte[] imageBytes = resolveFileBytes(part);
+        if (imageBytes == null) {
+            sendFallbackText(contextToken + "|" + toUserId, part);
+            return;
+        }
+        client.sendImage(toUserId, imageBytes, contextToken);
+        log.info("[weixin] Image sent to {}: {}bytes", toUserId.substring(0, Math.min(12, toUserId.length())), imageBytes.length);
+    }
+
+    private void sendFilePart(String toUserId, String contextToken, MessageContentPart part) throws Exception {
+        byte[] fileBytes = resolveFileBytes(part);
+        if (fileBytes == null) {
+            sendFallbackText(contextToken + "|" + toUserId, part);
+            return;
+        }
+        String fileName = part.getFileName() != null ? part.getFileName() : "file.bin";
+        client.sendFile(toUserId, fileBytes, fileName, contextToken);
+        log.info("[weixin] File sent to {}: {} ({}bytes)", toUserId.substring(0, Math.min(12, toUserId.length())), fileName, fileBytes.length);
+    }
+
+    private void sendVideoPart(String toUserId, String contextToken, MessageContentPart part) throws Exception {
+        byte[] videoBytes = resolveFileBytes(part);
+        if (videoBytes == null) {
+            sendFallbackText(contextToken + "|" + toUserId, part);
+            return;
+        }
+        client.sendVideo(toUserId, videoBytes, contextToken);
+        log.info("[weixin] Video sent to {}: {}bytes", toUserId.substring(0, Math.min(12, toUserId.length())), videoBytes.length);
+    }
+
+    /**
+     * 从 MessageContentPart 解析文件字节：优先本地路径，其次 URL 下载
+     */
+    private byte[] resolveFileBytes(MessageContentPart part) {
+        if (part.getPath() != null && !part.getPath().isBlank()) {
+            try {
+                Path p = Path.of(part.getPath());
+                if (Files.exists(p)) {
+                    return Files.readAllBytes(p);
+                }
+            } catch (Exception e) {
+                log.debug("[weixin] Failed to read local file {}: {}", part.getPath(), e.getMessage());
+            }
+        }
+        String url = part.getFileUrl();
+        if (url != null && !url.isBlank() && uploadHttpClient != null) {
+            try {
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(url))
+                        .timeout(Duration.ofSeconds(30))
+                        .GET().build();
+                HttpResponse<byte[]> resp = uploadHttpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                if (resp.statusCode() == 200) {
+                    return resp.body();
+                }
+            } catch (Exception e) {
+                log.debug("[weixin] Failed to download from {}: {}", url, e.getMessage());
+            }
+        }
+        return null;
+    }
+
+    private void sendFallbackText(String targetId, MessageContentPart part) {
+        switch (part.getType()) {
+            case "image" -> sendMessage(targetId, "[图片]");
+            case "file" -> sendMessage(targetId, "[文件: " + (part.getFileName() != null ? part.getFileName() : "file") + "]");
+            case "video" -> sendMessage(targetId, "[视频]");
+            default -> { if (part.getText() != null) sendMessage(targetId, part.getText()); }
+        }
+    }
+
+    // ==================== 输入中提示 ====================
+
+    /**
+     * 启动输入中提示（每 5 秒刷新一次）
+     */
+    private void startTyping(String userId, String contextToken) {
+        if (client == null || userId.isBlank()) return;
+
+        // 先停止旧的
+        stopTyping(userId);
+
+        try {
+            String ticket = getTypingTicket(userId, contextToken);
+            if (ticket == null || ticket.isBlank()) {
+                log.debug("[weixin] No typing ticket for user {}", userId.substring(0, Math.min(12, userId.length())));
+                return;
+            }
+
+            // 立即发送一次
+            client.sendTyping(userId, ticket, 1);
+
+            // 定时刷新
+            if (typingScheduler != null && !typingScheduler.isShutdown()) {
+                ScheduledFuture<?> future = typingScheduler.scheduleAtFixedRate(() -> {
+                    try {
+                        if (client != null) {
+                            client.sendTyping(userId, ticket, 1);
+                        }
+                    } catch (Exception e) {
+                        log.debug("[weixin] Typing refresh failed: {}", e.getMessage());
+                    }
+                }, TYPING_REFRESH_INTERVAL_MS, TYPING_REFRESH_INTERVAL_MS, TimeUnit.MILLISECONDS);
+                typingTasks.put(userId, future);
+            }
+
+            log.debug("[weixin] Typing started for {}", userId.substring(0, Math.min(12, userId.length())));
+        } catch (Exception e) {
+            log.debug("[weixin] Failed to start typing: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 停止输入中提示
+     */
+    private void stopTyping(String userId) {
+        ScheduledFuture<?> future = typingTasks.remove(userId);
+        if (future != null) {
+            future.cancel(false);
+        }
+
+        // 发送停止状态
+        TypingTicketEntry entry = typingTickets.get(userId);
+        if (entry != null && entry.isValid() && client != null) {
+            try {
+                client.sendTyping(userId, entry.ticket(), 2);
+                log.debug("[weixin] Typing stopped for {}", userId.substring(0, Math.min(12, userId.length())));
+            } catch (Exception e) {
+                log.debug("[weixin] Failed to stop typing: {}", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 获取或缓存 typing ticket（24 小时 TTL）
+     */
+    private String getTypingTicket(String userId, String contextToken) {
+        TypingTicketEntry cached = typingTickets.get(userId);
+        if (cached != null && cached.isValid()) {
+            return cached.ticket();
+        }
+
+        try {
+            Map<String, Object> configResp = client.getConfig(userId, contextToken);
+            int ret = configResp.get("ret") instanceof Number n ? n.intValue() : -1;
+            if (ret != 0) {
+                log.debug("[weixin] getConfig ret={} for typing ticket", ret);
+                return null;
+            }
+            String ticket = (String) configResp.getOrDefault("typing_ticket", "");
+            if (!ticket.isBlank()) {
+                typingTickets.put(userId, new TypingTicketEntry(ticket, System.currentTimeMillis() + TYPING_TICKET_TTL_MS));
+            }
+            return ticket;
+        } catch (Exception e) {
+            log.debug("[weixin] Failed to get typing ticket: {}", e.getMessage());
+            return null;
         }
     }
 
@@ -467,6 +772,26 @@ public class WeixinChannelAdapter extends AbstractChannelAdapter {
     }
 
     // ==================== 工具方法 ====================
+
+    /**
+     * 从消息 item 中构建 CDN 下载 URL（不下载，仅构建 URL 供多模态分析使用）
+     */
+    @SuppressWarnings("unchecked")
+    private String buildCdnUrl(Map<String, Object> item, String itemKey) {
+        try {
+            Map<String, Object> mediaItem = (Map<String, Object>) item.getOrDefault(itemKey, Map.of());
+            Map<String, Object> media = (Map<String, Object>) mediaItem.getOrDefault("media", Map.of());
+            String encryptQueryParam = getStr(media, "encrypt_query_param");
+            if (encryptQueryParam.isBlank()) return null;
+
+            String cdnBase = "https://novac2c.cdn.weixin.qq.com/c2c";
+            return cdnBase + "/download?encrypted_query_param="
+                    + java.net.URLEncoder.encode(encryptQueryParam, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            log.debug("[weixin] Failed to build CDN URL: {}", e.getMessage());
+            return null;
+        }
+    }
 
     private static String getStr(Map<String, Object> map, String key) {
         Object val = map.get(key);

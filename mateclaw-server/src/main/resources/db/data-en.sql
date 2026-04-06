@@ -1115,7 +1115,7 @@ VALUES (1000000006, 'WeCom Bot', 'wecom', 1000000001, '', '{
   "bot_id": "",
   "secret": "",
   "welcome_text": "",
-  "media_download_enabled": false,
+  "media_download_enabled": true,
   "media_dir": "data/media",
   "dm_policy": "open",
   "group_policy": "open",
@@ -1154,7 +1154,7 @@ KEY (id)
 VALUES (1000000008, 'WeChat', 'weixin', 1000000001, '', '{
   "bot_token": "",
   "base_url": "https://ilinkai.weixin.qq.com",
-  "media_download_enabled": false,
+  "media_download_enabled": true,
   "media_dir": "data/media",
   "dm_policy": "open",
   "group_policy": "open",

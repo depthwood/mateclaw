@@ -227,7 +227,7 @@ public abstract class AbstractChannelAdapter implements ChannelAdapter {
 
         // 清理 bot 前缀
         String cleaned = cleanBotPrefix(message.getContent());
-        if (cleaned.isBlank()) {
+        if (cleaned.isBlank() && !hasContentParts(message)) {
             log.debug("[{}] Empty message after prefix cleaning, ignoring", getChannelType());
             return;
         }
@@ -312,6 +312,17 @@ public abstract class AbstractChannelAdapter implements ChannelAdapter {
             return content.trim().substring(botPrefix.trim().length()).trim();
         }
         return content.trim();
+    }
+
+    /**
+     * 检查消息是否包含非文本内容部分（图片、文件、视频等）
+     */
+    private boolean hasContentParts(ChannelMessage message) {
+        if (message.getContentParts() == null || message.getContentParts().isEmpty()) {
+            return false;
+        }
+        return message.getContentParts().stream()
+                .anyMatch(p -> p != null && !"text".equals(p.getType()));
     }
 
     /**

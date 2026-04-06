@@ -81,6 +81,29 @@ public final class WeixinAesUtil {
         return decoded;
     }
 
+    /**
+     * AES-128-ECB 加密（用于上传媒体文件到 CDN）
+     *
+     * @param data      明文数据
+     * @param keyBase64 AES key（Base64 编码的原始 16 字��）
+     * @return 加密后的数据（含 PKCS5 填充）
+     */
+    public static byte[] aesEcbEncrypt(byte[] data, String keyBase64) throws Exception {
+        byte[] key = Base64.getDecoder().decode(keyBase64);
+        Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+        cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, "AES"));
+        return cipher.doFinal(data);
+    }
+
+    /**
+     * 生成随机 AES-128 密钥（16 字节，Base64 ���码）
+     */
+    public static String generateAesKeyBase64() {
+        byte[] key = new byte[16];
+        new java.security.SecureRandom().nextBytes(key);
+        return Base64.getEncoder().encodeToString(key);
+    }
+
     private static boolean isHex(String s) {
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);

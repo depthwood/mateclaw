@@ -253,9 +253,13 @@ public abstract class BaseAgent {
             if (part == null) continue;
             String partType = part.getType();
             String contentType = part.getContentType();
+            // image 类型的 part 可能没有精确 contentType，补全为 image/jpeg
+            if ("image".equals(partType) && (contentType == null || "image/*".equals(contentType))) {
+                contentType = "image/jpeg";
+            }
             if (contentType == null) continue;
 
-            boolean isImage = "file".equals(partType) && contentType.startsWith("image/");
+            boolean isImage = ("image".equals(partType) || "file".equals(partType)) && contentType.startsWith("image/");
             boolean isVideo = ("video".equals(partType) || "file".equals(partType)) && contentType.startsWith("video/");
 
             if (!isImage && !isVideo) continue;
