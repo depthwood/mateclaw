@@ -153,6 +153,10 @@ public class DocumentExtractTool {
     // ==================== PDF 提取链 ====================
 
     private ExtractedContent extractPdf(Path path, String options, List<String> attempts) throws Exception {
+        // 先获取 PDF 真实页数（不依赖提取出的文本长度反推）
+        int realPageCount = getPdfPageCount(path);
+        log.info("[DocumentExtract] PDF 真实页数: {} ({})", realPageCount, path.getFileName());
+
         String bestContent = null;
         String bestMethod = null;
 
@@ -160,12 +164,13 @@ public class DocumentExtractTool {
         long t0 = System.currentTimeMillis();
         String content = tryPdftotext(path, options);
         if (content != null && !content.isBlank()) {
-            int pages = estimatePages(content);
-            if (!needsOcr(content, pages)) {
+            if (!needsOcr(content, realPageCount)) {
                 attempts.add("pdftotext: 成功 (" + (System.currentTimeMillis() - t0) + "ms)");
-                return new ExtractedContent(content, "pdftotext", pages);
+                return new ExtractedContent(content, "pdftotext", realPageCount > 0 ? realPageCount : estimatePages(content));
             }
-            attempts.add("pdftotext: 文本过少 (每页 " + charsPerPage(content, pages) + " 字符)，可能是扫描版");
+            double perPage = realPageCount > 0 ? (double) content.strip().length() / realPageCount : 0;
+            attempts.add("pdftotext: 文本过少 (总 " + content.strip().length() + " 字符, "
+                    + realPageCount + " 页, 每页 " + String.format("%.0f", perPage) + " 字符)，可能是扫描版");
             bestContent = content;
             bestMethod = "pdftotext";
         } else {
@@ -176,10 +181,9 @@ public class DocumentExtractTool {
         long t1 = System.currentTimeMillis();
         content = tryPythonPdfExtractor(path, options);
         if (content != null && !content.isBlank()) {
-            int pages = estimatePages(content);
-            if (!needsOcr(content, pages)) {
+            if (!needsOcr(content, realPageCount)) {
                 attempts.add("python_pdf: 成功 (" + (System.currentTimeMillis() - t1) + "ms)");
-                return new ExtractedContent(content, "python_pdfplumber", pages);
+                return new ExtractedContent(content, "python_pdfplumber", realPageCount > 0 ? realPageCount : estimatePages(content));
             }
             attempts.add("python_pdf: 文本过少");
             if (bestContent == null || content.strip().length() > bestContent.strip().length()) {
@@ -194,10 +198,9 @@ public class DocumentExtractTool {
         long t2 = System.currentTimeMillis();
         content = extractPdfWithJava(path);
         if (content != null && !content.isBlank()) {
-            int pages = estimatePages(content);
-            if (!needsOcr(content, pages)) {
+            if (!needsOcr(content, realPageCount)) {
                 attempts.add("java_pdf: 成功 (" + (System.currentTimeMillis() - t2) + "ms)");
-                return new ExtractedContent(content, "java_pdfbox", pages);
+                return new ExtractedContent(content, "java_pdfbox", realPageCount > 0 ? realPageCount : estimatePages(content));
             }
             attempts.add("java_pdf: 文本过少");
             if (bestContent == null || content.strip().length() > bestContent.strip().length()) {
@@ -211,10 +214,11 @@ public class DocumentExtractTool {
         // 4. OCR fallback（扫描版/照片型 PDF）
         log.info("[DocumentExtract] 文本提取不足，尝试 OCR: {}", path.getFileName());
         long t3 = System.currentTimeMillis();
-        content = tryOcrExtract(path, attempts);
-        if (content != null && !content.isBlank()) {
-            attempts.add("ocr_tesseract: 成功 (" + (System.currentTimeMillis() - t3) + "ms)");
-            return new ExtractedContent(content, "ocr_tesseract", estimatePages(content));
+        OcrResult ocrResult = tryOcrExtract(path, attempts);
+        if (ocrResult != null && ocrResult.text != null && !ocrResult.text.isBlank()) {
+            attempts.add("ocr_tesseract: 成功 (" + (System.currentTimeMillis() - t3) + "ms, "
+                    + ocrResult.successPages + "/" + ocrResult.totalPages + " 页识别成功)");
+            return new ExtractedContent(ocrResult.text, "ocr_tesseract", ocrResult.totalPages);
         }
         // attempts 已由 tryOcrExtract 内部记录失败原因
 
@@ -222,34 +226,72 @@ public class DocumentExtractTool {
         if (bestContent != null) {
             log.warn("[DocumentExtract] OCR 不可用，返回部分文本结果: method={}, length={}",
                     bestMethod, bestContent.strip().length());
-            return new ExtractedContent(bestContent, bestMethod + "_partial", estimatePages(bestContent));
+            int pages = realPageCount > 0 ? realPageCount : estimatePages(bestContent);
+            return new ExtractedContent(bestContent, bestMethod + "_partial", pages);
         }
 
         throw new Exception("所有 PDF 提取方法都失败（包括 OCR）");
     }
 
     /**
-     * 判断提取到的文本是否太少、需要尝试 OCR。
-     * 基于字符密度（每页平均字符数）而非总字符数，避免误判短票据/证书类 PDF。
+     * 获取 PDF 真实页数。优先用 pdfinfo（Poppler 自带），失败则用 Python pypdf。
+     * 不依赖提取出的文本长度反推，避免扫描版 PDF 误判页数。
      */
-    private boolean needsOcr(String text, int estimatedPages) {
+    private int getPdfPageCount(Path path) {
+        // 方法 1: pdfinfo（Poppler 附带工具）
+        try {
+            String output = executeCommand(List.of("pdfinfo", path.toString()));
+            if (output != null) {
+                for (String line : output.split("\n")) {
+                    if (line.toLowerCase().startsWith("pages:")) {
+                        String num = line.substring(6).strip();
+                        return Integer.parseInt(num);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("[DocumentExtract] pdfinfo 获取页数失败: {}", e.getMessage());
+        }
+        // 方法 2: Python pypdf
+        try {
+            String script = "import sys; from pypdf import PdfReader; print(len(PdfReader(sys.argv[1]).pages))";
+            String result = tryPythonScript(script, path.toString());
+            if (result != null && !result.isBlank()) {
+                return Integer.parseInt(result.strip());
+            }
+        } catch (Exception e) {
+            log.debug("[DocumentExtract] pypdf 获取页数失败: {}", e.getMessage());
+        }
+        return 0; // 未知页数
+    }
+
+    /**
+     * 判断提取到的文本是否太少、需要尝试 OCR。
+     * 使用真实页数（来自 getPdfPageCount）计算字符密度，不再依赖 estimatePages 反推。
+     * 页数未知（0）时，只看总字符数。
+     */
+    private boolean needsOcr(String text, int realPageCount) {
         if (text == null || text.isBlank()) return true;
         String stripped = text.strip();
         if (stripped.length() < 20) return true;
-        double perPage = charsPerPage(stripped, estimatedPages);
+        if (realPageCount <= 0) {
+            // 页数未知时回退到总字符数判定（保守阈值）
+            return stripped.length() < 100;
+        }
+        double perPage = (double) stripped.length() / realPageCount;
         // 正常文本 PDF 每页至少数百字符；每页不到 30 字符大概率是扫描版
         return perPage < 30;
     }
 
-    private double charsPerPage(String text, int pages) {
-        return (double) text.strip().length() / Math.max(1, pages);
-    }
+    /** OCR 结果（含成功/失败页数统计） */
+    private record OcrResult(String text, int totalPages, int successPages) {}
 
     /**
      * OCR 提取：pdftoppm 转图片 + tesseract 识别文字。
      * 仅依赖 Poppler（pdftoppm）和 tesseract 系统命令，不引入新 Python 依赖。
+     * 只有至少一页真正识别到文本时才返回有效结果，全部失败返回 null。
      */
-    private String tryOcrExtract(Path pdfPath, List<String> attempts) {
+    private OcrResult tryOcrExtract(Path pdfPath, List<String> attempts) {
         Path tempDir = null;
         try {
             long startTime = System.currentTimeMillis();
@@ -290,9 +332,11 @@ public class DocumentExtractTool {
                 return null;
             }
 
-            // Step 4: 对每页执行 OCR
+            // Step 4: 对每页执行 OCR，统计成功/失败页数
             long t2 = System.currentTimeMillis();
             StringBuilder ocrText = new StringBuilder();
+            int successPages = 0;
+            int failedPages = 0;
             for (int i = 0; i < pageFiles.length; i++) {
                 ocrText.append("--- Page ").append(i + 1).append(" ---\n");
                 try {
@@ -305,17 +349,30 @@ public class DocumentExtractTool {
                         cmd.add(langParam);
                     }
                     String pageText = executeCommand(cmd);
-                    ocrText.append(pageText != null ? pageText.trim() : "").append("\n\n");
+                    if (pageText != null && !pageText.isBlank()) {
+                        ocrText.append(pageText.trim()).append("\n\n");
+                        successPages++;
+                    } else {
+                        ocrText.append("[空白页]\n\n");
+                        failedPages++;
+                    }
                 } catch (Exception e) {
                     log.warn("[DocumentExtract] OCR: 页面 {} tesseract 失败: {}", i + 1, e.getMessage());
-                    ocrText.append("[OCR 失败]\n\n");
+                    failedPages++;
+                    // 不写 [OCR 失败] 占位，避免被上层误判为有效文本
                 }
             }
-            log.info("[DocumentExtract] OCR: tesseract 处理 {} 页耗时 {}ms，总耗时 {}ms",
-                    pageFiles.length, System.currentTimeMillis() - t2, System.currentTimeMillis() - startTime);
+            log.info("[DocumentExtract] OCR: tesseract 处理 {} 页 (成功 {}, 失败 {}), 耗时 {}ms, 总耗时 {}ms",
+                    pageFiles.length, successPages, failedPages,
+                    System.currentTimeMillis() - t2, System.currentTimeMillis() - startTime);
 
-            String result = ocrText.toString().trim();
-            return result.isEmpty() ? null : result;
+            // 只有至少一页真正识别到文本时才算成功
+            if (successPages == 0) {
+                attempts.add("ocr: tesseract 运行但所有 " + pageFiles.length + " 页均未识别到文本");
+                return null;
+            }
+
+            return new OcrResult(ocrText.toString().trim(), pageFiles.length, successPages);
 
         } catch (Exception e) {
             log.warn("[DocumentExtract] OCR 失败: {}", e.getMessage());

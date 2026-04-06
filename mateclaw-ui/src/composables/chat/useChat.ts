@@ -630,11 +630,12 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       assistantMessage.conversationId = conversationId
       currentAssistantId.value = assistantMessage.id as string
 
+      // contentParts 已由 buildOutgoingParts 包含 file entries，不要重复合并 attachments
       await stream.connect({
         agentId,
         message: content,
         conversationId,
-        contentParts: [...contentParts, ...attachments],
+        contentParts,
       })
     } catch (e) {
       error.value = e instanceof Error ? e : new Error(String(e))
