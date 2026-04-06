@@ -383,6 +383,27 @@ CREATE TABLE IF NOT EXISTS mate_tool_guard_audit_log (
     deleted             INT          NOT NULL DEFAULT 0
 );
 
+-- 外部数据源表（查数功能）
+CREATE TABLE IF NOT EXISTS mate_datasource (
+    id              BIGINT       NOT NULL PRIMARY KEY,
+    name            VARCHAR(128) NOT NULL,
+    description     VARCHAR(512),
+    db_type         VARCHAR(32)  NOT NULL,
+    host            VARCHAR(256) NOT NULL,
+    port            INT          NOT NULL,
+    database_name   VARCHAR(128) NOT NULL,
+    username        VARCHAR(128),
+    password        VARCHAR(512),
+    extra_params    VARCHAR(512),
+    schema_name     VARCHAR(128),
+    enabled         BOOLEAN      NOT NULL DEFAULT TRUE,
+    last_test_time  DATETIME,
+    last_test_ok    BOOLEAN,
+    create_time     DATETIME     NOT NULL,
+    update_time     DATETIME     NOT NULL,
+    deleted         INT          NOT NULL DEFAULT 0
+);
+
 -- 为现有表添加 metadata 列（向后兼容，防止迁移时数据丢失）
 ALTER TABLE mate_message ADD COLUMN IF NOT EXISTS metadata JSON;
 

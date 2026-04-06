@@ -51,6 +51,12 @@ const router = createRouter({
           meta: { title: 'Tools' },
         },
         {
+          path: 'datasources',
+          name: 'Datasources',
+          component: () => import('@/views/Datasources.vue'),
+          meta: { title: 'Datasources' },
+        },
+        {
           path: 'mcp-servers',
           name: 'McpServers',
           component: () => import('@/views/McpServers.vue'),

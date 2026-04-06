@@ -476,6 +476,10 @@ MERGE INTO mate_skill (id, name, description, skill_type, icon, version, author,
 KEY (id)
 VALUES (1000000013, 'mateclaw_source_index', '将用户问题映射到 MateClaw 文档路径与源码入口，减少盲目搜索。', 'builtin', '🗂️', '1.0.0', 'MateClaw', '{"upstream":"mateclaw","entryFile":"SKILL.md"}', TRUE, TRUE, 'docs,index,source,qa', NOW(), NOW(), 0);
 
+MERGE INTO mate_skill (id, name, description, skill_type, icon, version, author, config_json, enabled, builtin, tags, create_time, update_time, deleted)
+KEY (id)
+VALUES (1000000014, 'sql_query', '自然语言查询数据库。发现表结构、生成 SQL 并在外部数据源上执行只读查询。', 'builtin', '📊', '1.0.0', 'MateClaw', '{"upstream":"mateclaw","entryFile":"SKILL.md"}', TRUE, TRUE, 'sql,database,query,data,查数', NOW(), NOW(), 0);
+
 -- 为关键 builtin skill 填充 skill_content（SKILL.md 执行协议）
 -- NOTE: For pdf/docx/pptx/xlsx/himalaya, the authoritative SKILL.md is bundled in
 -- classpath:skills/{name}/ and auto-synced to workspace on startup.

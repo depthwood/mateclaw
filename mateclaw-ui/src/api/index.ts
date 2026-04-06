@@ -159,6 +159,18 @@ export const skillInstallApi = {
     http.delete(`/skills/install/${skillName}`),
 }
 
+// ==================== Datasource ====================
+export const datasourceApi = {
+  list: () => http.get('/datasources'),
+  get: (id: string | number) => http.get(`/datasources/${id}`),
+  create: (data: any) => http.post('/datasources', data),
+  update: (id: string | number, data: any) => http.put(`/datasources/${id}`, data),
+  delete: (id: string | number) => http.delete(`/datasources/${id}`),
+  toggle: (id: string | number, enabled: boolean) =>
+    http.put(`/datasources/${id}/toggle?enabled=${enabled}`),
+  test: (id: string | number) => http.post(`/datasources/${id}/test`),
+}
+
 // ==================== Tool ====================
 export const toolApi = {
   list: () => http.get('/tools'),
