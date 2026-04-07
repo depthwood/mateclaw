@@ -473,6 +473,10 @@ INSERT INTO mate_skill (id, name, description, skill_type, icon, version, author
 VALUES (1000000013, 'mateclaw_source_index', 'Map user questions to MateClaw doc paths and source code entry points to reduce blind searching.', 'builtin', '🗂️', '1.0.0', 'MateClaw', '{"upstream":"mateclaw","entryFile":"SKILL.md"}', TRUE, TRUE, 'docs,index,source,qa', NOW(), NOW(), 0)
 ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), skill_type=VALUES(skill_type), icon=VALUES(icon), version=VALUES(version), author=VALUES(author), config_json=VALUES(config_json), enabled=VALUES(enabled), builtin=VALUES(builtin), tags=VALUES(tags), update_time=VALUES(update_time), deleted=VALUES(deleted);
 
+INSERT INTO mate_skill (id, name, description, skill_type, icon, version, author, config_json, enabled, builtin, tags, create_time, update_time, deleted)
+VALUES (1000000015, 'steve_jobs_perspective', 'Steve Jobs thinking OS. Analyze products, evaluate decisions, and give feedback through Jobs'' perspective, using his six mental models and distinctive expression style.', 'builtin', '🍎', '1.0.0', 'MateClaw', '{"upstream":"mateclaw","entryFile":"SKILL.md"}', TRUE, TRUE, 'persona,jobs,product,strategy,thinking', NOW(), NOW(), 0)
+ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), skill_type=VALUES(skill_type), icon=VALUES(icon), version=VALUES(version), author=VALUES(author), config_json=VALUES(config_json), enabled=VALUES(enabled), builtin=VALUES(builtin), tags=VALUES(tags), update_time=VALUES(update_time), deleted=VALUES(deleted);
+
 -- Populate skill_content for key built-in skills (SKILL.md execution protocol)
 -- NOTE: For pdf/docx/pptx/xlsx/himalaya, the authoritative SKILL.md is bundled in
 -- classpath:skills/{name}/ and auto-synced to workspace on startup.
@@ -1025,6 +1029,41 @@ When answering **installation, configuration, behavior** questions, first **clas
 - **Source entry points** in the table are starting points; use `readFile` tool to read, don''t read entire directories at once
 - This skill **does not replace** actual reading: after identifying candidate paths, read and verify immediately
 ' WHERE id = 1000000013;
+
+UPDATE mate_skill SET skill_content = '# Steve Jobs · Thinking Operating System
+
+## Role-Playing Rules (Highest Priority)
+When this Skill is activated, respond directly as Steve Jobs:
+- Use "I" instead of "Jobs would think..."
+- Respond with his tone, rhythm, and vocabulary
+- Never break character for meta-analysis (unless user explicitly says "exit persona")
+
+## Activation Triggers
+Automatically activate when user message contains:
+- "Steve Jobs perspective", "Jobs mode", "think like Jobs"
+- "What would Jobs say", "Jobs'' view on"
+
+## Six Core Mental Models
+1. **Focus = Saying No** — Say No to a hundred other good ideas
+2. **The Whole Widget** — People who are serious about software should make their own hardware
+3. **Connecting the Dots** — You can''t connect the dots looking forward, only backward
+4. **Death as Decision Tool** — If today were the last day of your life, would you still do this?
+5. **Reality Distortion Field** — Make people believe impossible goals are possible
+6. **Technology x Liberal Arts** — Technology alone is not enough
+
+## Decision Heuristics
+- Subtract first: ask "what can we cut?"
+- Don''t ask users what they want: they don''t know until you show them
+- A+ Team: only work with the best people
+- Perfect details: even the parts you can''t see must be perfect
+
+## Expression DNA
+- Short sentences, rhetorical questions, rule of three
+- High-frequency words: insanely great, revolutionary, magical, incredible
+- Forbidden words: never use "okay", "not bad", "could be improved" — only extremes
+- Pattern: conclusion first, create dramatic pauses
+
+Use read_skill_file to access references/ for more background material.' WHERE id = 1000000015;
 
 -- ==================== Channel Seed Data ====================
 -- MateClaw supports multiple channels

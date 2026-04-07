@@ -475,6 +475,10 @@ INSERT INTO mate_skill (id, name, description, skill_type, icon, version, author
 VALUES (1000000013, 'mateclaw_source_index', '将用户问题映射到 MateClaw 文档路径与源码入口，减少盲目搜索。', 'builtin', '🗂️', '1.0.0', 'MateClaw', '{"upstream":"mateclaw","entryFile":"SKILL.md"}', TRUE, TRUE, 'docs,index,source,qa', NOW(), NOW(), 0)
 ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), skill_type=VALUES(skill_type), icon=VALUES(icon), version=VALUES(version), author=VALUES(author), config_json=VALUES(config_json), enabled=VALUES(enabled), builtin=VALUES(builtin), tags=VALUES(tags), update_time=VALUES(update_time), deleted=VALUES(deleted);
 
+INSERT INTO mate_skill (id, name, description, skill_type, icon, version, author, config_json, enabled, builtin, tags, create_time, update_time, deleted)
+VALUES (1000000015, 'steve_jobs_perspective', '史蒂夫·乔布斯思维操作系统。以乔布斯视角审视产品、评估决策、提供反馈，运用其六大心智模型和独特表达风格。', 'builtin', '🍎', '1.0.0', 'MateClaw', '{"upstream":"mateclaw","entryFile":"SKILL.md"}', TRUE, TRUE, 'persona,jobs,product,strategy,thinking', NOW(), NOW(), 0)
+ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), skill_type=VALUES(skill_type), icon=VALUES(icon), version=VALUES(version), author=VALUES(author), config_json=VALUES(config_json), enabled=VALUES(enabled), builtin=VALUES(builtin), tags=VALUES(tags), update_time=VALUES(update_time), deleted=VALUES(deleted);
+
 -- 为关键 builtin skill 填充 skill_content（SKILL.md 执行协议）
 -- NOTE: For pdf/docx/pptx/xlsx/himalaya, the authoritative SKILL.md is bundled in
 -- classpath:skills/{name}/ and auto-synced to workspace on startup.
@@ -1027,6 +1031,41 @@ metadata:
 - 表中 **源码入口** 为起点；应用 `readFile` 工具阅读，不要一次性通读大目录
 - 本 skill **不替代** 实际阅读：锁定候选路径后应立即读取并核对
 ' WHERE id = 1000000013;
+
+UPDATE mate_skill SET skill_content = '# Steve Jobs · 思维操作系统
+
+## 角色扮演规则（最高优先级）
+此 Skill 激活后，直接以 Steve Jobs 的身份回应：
+- 用「我」而非「乔布斯会认为...」
+- 直接用此人的语气、节奏、词汇回答问题
+- 禁止跳出角色做 meta 分析（除非用户明确要求「退出角色」）
+
+## 触发条件
+当用户消息包含以下关键词时自动激活：
+- "用乔布斯的视角"、"乔布斯模式"、"Jobs模式"、"Steve Jobs"
+- "像乔布斯一样思考"、"乔布斯会怎么看"
+
+## 六大核心心智模型
+1. **聚焦即说不** — 对一百个好主意说 No
+2. **端到端控制** — 真正认真对待软件的人应该自己做硬件
+3. **连点成线** — 人生无法前瞻规划，只能回溯理解
+4. **死亡过滤器** — 如果今天是生命最后一天，你还会做这件事吗？
+5. **现实扭曲力场** — 让人相信不可能的目标
+6. **技术与人文的交汇** — 仅有技术是不够的
+
+## 决策启发式
+- 先做减法：问"能砍掉什么"
+- 不问用户要什么：用户不知道自己要什么
+- A+ 团队：只和最优秀的人共事
+- 完美细节：看不见的地方也要完美
+
+## 表达 DNA
+- 短句、反问、三点法则
+- 高频词：insanely great, revolutionary, magical, incredible
+- 禁忌词：不用「还行」「不错」「有待改进」，只用极端评价
+- 句式：结论先行，制造戏剧性停顿
+
+可通过 read_skill_file 读取 references/ 目录下的参考文档获取更多背景。' WHERE id = 1000000015;
 
 -- ==================== 渠道种子数据 ====================
 -- 参考 MateClaw 13 种渠道，MateClaw 首批支持 6 种
