@@ -60,4 +60,26 @@ public class SystemSettingsDTO {
     private String klingSecretKey;
     private String klingAccessKeyMasked;
     private String klingSecretKeyMasked;
+
+    // ===== 图片生成配置 =====
+    /** 是否启用图片生成能力 */
+    private Boolean imageEnabled;
+    /** 首选图片 provider: auto / dashscope / openai / fal / zhipu-cogview */
+    private String imageProvider;
+    /** 是否启用 provider 级 fallback */
+    private Boolean imageFallbackEnabled;
+
+    // ===== TTS 语音合成配置 =====
+    /** 是否启用 TTS */
+    private Boolean ttsEnabled;
+    /** 首选 TTS provider: auto / edge-tts / openai / dashscope */
+    private String ttsProvider;
+    /** 是否启用 provider 级 fallback */
+    private Boolean ttsFallbackEnabled;
+    /** 自动 TTS 模式: off / always */
+    private String ttsAutoMode;
+    /** 默认语音 */
+    private String ttsDefaultVoice;
+    /** 默认语速 0.5-2.0 */
+    private Double ttsSpeed;
 }

@@ -14,6 +14,7 @@ import { useStream } from './useStream'
 import { useMessageQueue } from './useMessageQueue'
 import type { Message, MessageContentPart, StreamPhase, HeartbeatData, QueuedMessage, PhaseEventData } from '@/types'
 import { classifyBackendError, type ChatErrorInfo } from '@/types/chatError'
+import { http } from '@/api'
 
 export interface UseChatOptions {
   /** API 基础 URL */
@@ -241,6 +242,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       }
       setMessageStatus(currentAssistantId.value, data.status || 'completed')
       // 关键修复：不在这里清除 currentAssistantId
+    }
+
+    // === 自动 TTS：message_complete 且 status=completed 时触发 ===
+    if (data.status === 'completed' && data.hasContent && currentAssistantId.value) {
+      const msg = getMessage(currentAssistantId.value)
+      if (msg?.content && streamConversationId) {
+        triggerAutoTts(streamConversationId, msg.content)
+      }
     }
   })
 
@@ -618,23 +627,76 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     phaseInfo.value = null
   })
 
-  // ===== 异步任务完成事件（视频生成等） =====
+  // ===== 异步任务完成事件（视频生成、图片生成等） =====
   stream.on('async_task_completed', (data) => {
     console.log('[useChat] Async task completed:', data)
-    if (data.success && data.videoUrl && streamConversationId) {
-      // 在消息列表中追加一条包含视频的 assistant 消息
-      addMessage({
-        role: 'assistant',
-        content: '',
-        contentParts: [{
-          type: 'video',
-          fileUrl: data.videoUrl,
-          fileName: `video_${data.taskId}.mp4`,
-          contentType: 'video/mp4',
-        }] as MessageContentPart[],
-        status: 'completed',
-        conversationId: streamConversationId,
-      })
+    if (data.success && streamConversationId) {
+      if (data.videoUrl) {
+        // 视频生成完成
+        addMessage({
+          role: 'assistant',
+          content: '',
+          contentParts: [{
+            type: 'video',
+            fileUrl: data.videoUrl,
+            fileName: `video_${data.taskId}.mp4`,
+            contentType: 'video/mp4',
+          }] as MessageContentPart[],
+          status: 'completed',
+          conversationId: streamConversationId,
+        })
+      } else if (data.imageUrl) {
+        // 图片生成完成
+        addMessage({
+          role: 'assistant',
+          content: '',
+          contentParts: [{
+            type: 'image',
+            fileUrl: data.imageUrl,
+            fileName: `image_${data.taskId}.png`,
+            contentType: 'image/png',
+          }] as MessageContentPart[],
+          status: 'completed',
+          conversationId: streamConversationId,
+        })
+      }
+    }
+  })
+
+  // ===== TTS 自动朗读 =====
+  let ttsAutoModeCache: string | null = null
+  let ttsCacheExpiry = 0
+
+  async function triggerAutoTts(conversationId: string, text: string) {
+    try {
+      // 缓存 settings 5 分钟，避免每条消息都请求
+      const now = Date.now()
+      if (!ttsAutoModeCache || now > ttsCacheExpiry) {
+        const res: any = await http.get('/system-settings')
+        ttsAutoModeCache = res.data?.ttsAutoMode || 'off'
+        ttsCacheExpiry = now + 5 * 60 * 1000
+      }
+      if (ttsAutoModeCache !== 'always') return
+      // 调用后端合成，后端会通过 SSE tts_ready 广播
+      http.post('/tts/synthesize', { conversationId, text }).catch(() => {})
+    } catch {
+      // 静默失败
+    }
+  }
+
+  // ===== TTS 自动朗读：监听 tts_ready 事件 =====
+  stream.on('tts_ready', (data) => {
+    if (data.audioUrl) {
+      const token = localStorage.getItem('token') || ''
+      fetch(data.audioUrl, { headers: { Authorization: `Bearer ${token}` } })
+        .then(res => res.blob())
+        .then(blob => {
+          const url = URL.createObjectURL(blob)
+          const audio = new Audio(url)
+          audio.onended = () => URL.revokeObjectURL(url)
+          audio.play().catch(() => URL.revokeObjectURL(url))
+        })
+        .catch(() => {})
     }
   })
 

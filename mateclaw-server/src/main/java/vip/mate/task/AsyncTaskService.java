@@ -262,11 +262,17 @@ public class AsyncTaskService implements ApplicationRunner {
 
     public void broadcastTaskEvent(AsyncTaskEntity task, String eventName,
                                      boolean success, String videoUrl, String errorMessage) {
+        broadcastTaskEvent(task, eventName, success, videoUrl, null, errorMessage);
+    }
+
+    public void broadcastTaskEvent(AsyncTaskEntity task, String eventName,
+                                     boolean success, String videoUrl, String imageUrl, String errorMessage) {
         Map<String, Object> data = new HashMap<>();
         data.put("taskId", task.getTaskId());
         data.put("taskType", task.getTaskType());
         data.put("success", success);
         if (videoUrl != null) data.put("videoUrl", videoUrl);
+        if (imageUrl != null) data.put("imageUrl", imageUrl);
         if (errorMessage != null) data.put("errorMessage", errorMessage);
         streamTracker.broadcastObject(task.getConversationId(), eventName, data);
     }
@@ -310,6 +316,7 @@ public class AsyncTaskService implements ApplicationRunner {
             Integer progress,    // 0-100, nullable
             String videoUrl,     // 成功时的视频 URL
             String coverImageUrl,// 可选封面图
+            String imageUrl,     // 成功时的图片 URL（图片生成场景）
             String resultJson,   // 完成时的完整结果 JSON
             String errorMessage  // 失败时的错误信息
     ) {
@@ -322,19 +329,23 @@ public class AsyncTaskService implements ApplicationRunner {
         }
 
         public static TaskPollResult pending(Integer progress) {
-            return new TaskPollResult("pending", progress, null, null, null, null);
+            return new TaskPollResult("pending", progress, null, null, null, null, null);
         }
 
         public static TaskPollResult running(Integer progress) {
-            return new TaskPollResult("running", progress, null, null, null, null);
+            return new TaskPollResult("running", progress, null, null, null, null, null);
         }
 
         public static TaskPollResult succeeded(String videoUrl, String coverImageUrl, String resultJson) {
-            return new TaskPollResult("succeeded", 100, videoUrl, coverImageUrl, resultJson, null);
+            return new TaskPollResult("succeeded", 100, videoUrl, coverImageUrl, null, resultJson, null);
+        }
+
+        public static TaskPollResult imageSucceeded(String imageUrl, String resultJson) {
+            return new TaskPollResult("succeeded", 100, null, null, imageUrl, resultJson, null);
         }
 
         public static TaskPollResult failed(String errorMessage) {
-            return new TaskPollResult("failed", null, null, null, null, errorMessage);
+            return new TaskPollResult("failed", null, null, null, null, null, errorMessage);
         }
     }
 }

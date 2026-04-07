@@ -35,6 +35,8 @@ export type SSEEventType =
   // 异步任务事件
   | 'async_task_progress'
   | 'async_task_completed'
+  // TTS 事件
+  | 'tts_ready'
 
 export interface SSEEvent {
   type: SSEEventType

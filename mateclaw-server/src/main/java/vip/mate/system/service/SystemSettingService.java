@@ -31,6 +31,19 @@ public class SystemSettingService {
     private static final String VIDEO_ENABLED_KEY = "videoEnabled";
     private static final String VIDEO_PROVIDER_KEY = "videoProvider";
     private static final String VIDEO_FALLBACK_ENABLED_KEY = "videoFallbackEnabled";
+
+    // 图片生成配置 keys
+    private static final String IMAGE_ENABLED_KEY = "imageEnabled";
+    private static final String IMAGE_PROVIDER_KEY = "imageProvider";
+    private static final String IMAGE_FALLBACK_ENABLED_KEY = "imageFallbackEnabled";
+
+    // TTS 配置 keys
+    private static final String TTS_ENABLED_KEY = "ttsEnabled";
+    private static final String TTS_PROVIDER_KEY = "ttsProvider";
+    private static final String TTS_FALLBACK_ENABLED_KEY = "ttsFallbackEnabled";
+    private static final String TTS_AUTO_MODE_KEY = "ttsAutoMode";
+    private static final String TTS_DEFAULT_VOICE_KEY = "ttsDefaultVoice";
+    private static final String TTS_SPEED_KEY = "ttsSpeed";
     private static final String ZHIPU_API_KEY_KEY = "zhipuApiKey";
     private static final String ZHIPU_BASE_URL_KEY = "zhipuBaseUrl";
     private static final String FAL_API_KEY_KEY = "falApiKey";
@@ -68,6 +81,20 @@ public class SystemSettingService {
         dto.setFalApiKeyMasked(maskApiKey(getValue(FAL_API_KEY_KEY, "")));
         dto.setKlingAccessKeyMasked(maskApiKey(getValue(KLING_ACCESS_KEY_KEY, "")));
         dto.setKlingSecretKeyMasked(maskApiKey(getValue(KLING_SECRET_KEY_KEY, "")));
+
+        // 图片生成配置
+        dto.setImageEnabled(Boolean.parseBoolean(getValue(IMAGE_ENABLED_KEY, "false")));
+        dto.setImageProvider(getValue(IMAGE_PROVIDER_KEY, "auto"));
+        dto.setImageFallbackEnabled(Boolean.parseBoolean(getValue(IMAGE_FALLBACK_ENABLED_KEY, "true")));
+
+        // TTS 配置
+        dto.setTtsEnabled(Boolean.parseBoolean(getValue(TTS_ENABLED_KEY, "false")));
+        dto.setTtsProvider(getValue(TTS_PROVIDER_KEY, "auto"));
+        dto.setTtsFallbackEnabled(Boolean.parseBoolean(getValue(TTS_FALLBACK_ENABLED_KEY, "true")));
+        dto.setTtsAutoMode(getValue(TTS_AUTO_MODE_KEY, "off"));
+        dto.setTtsDefaultVoice(getValue(TTS_DEFAULT_VOICE_KEY, ""));
+        String speedStr = getValue(TTS_SPEED_KEY, "1.0");
+        try { dto.setTtsSpeed(Double.parseDouble(speedStr)); } catch (NumberFormatException e) { dto.setTtsSpeed(1.0); }
         return dto;
     }
 
@@ -165,6 +192,37 @@ public class SystemSettingService {
         }
         if (dto.getKlingSecretKey() != null && !dto.getKlingSecretKey().isBlank()) {
             saveValue(KLING_SECRET_KEY_KEY, dto.getKlingSecretKey(), "快手可灵 Secret Key");
+        }
+
+        // 图片生成配置
+        if (dto.getImageEnabled() != null) {
+            saveValue(IMAGE_ENABLED_KEY, String.valueOf(dto.getImageEnabled()), "是否启用图片生成");
+        }
+        if (dto.getImageProvider() != null) {
+            saveValue(IMAGE_PROVIDER_KEY, dto.getImageProvider(), "图片生成首选 Provider");
+        }
+        if (dto.getImageFallbackEnabled() != null) {
+            saveValue(IMAGE_FALLBACK_ENABLED_KEY, String.valueOf(dto.getImageFallbackEnabled()), "图片 Provider 级 Fallback");
+        }
+
+        // TTS 配置
+        if (dto.getTtsEnabled() != null) {
+            saveValue(TTS_ENABLED_KEY, String.valueOf(dto.getTtsEnabled()), "是否启用 TTS 语音合成");
+        }
+        if (dto.getTtsProvider() != null) {
+            saveValue(TTS_PROVIDER_KEY, dto.getTtsProvider(), "TTS 首选 Provider");
+        }
+        if (dto.getTtsFallbackEnabled() != null) {
+            saveValue(TTS_FALLBACK_ENABLED_KEY, String.valueOf(dto.getTtsFallbackEnabled()), "TTS Provider 级 Fallback");
+        }
+        if (dto.getTtsAutoMode() != null) {
+            saveValue(TTS_AUTO_MODE_KEY, dto.getTtsAutoMode(), "TTS 自动模式（off/always）");
+        }
+        if (dto.getTtsDefaultVoice() != null) {
+            saveValue(TTS_DEFAULT_VOICE_KEY, dto.getTtsDefaultVoice(), "TTS 默认语音");
+        }
+        if (dto.getTtsSpeed() != null) {
+            saveValue(TTS_SPEED_KEY, String.valueOf(dto.getTtsSpeed()), "TTS 默认语速");
         }
         return getSettings();
     }

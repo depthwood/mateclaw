@@ -275,6 +275,29 @@
               <polyline points="20 6 9 17 4 12"/>
             </svg>
           </button>
+          <!-- 朗读 TTS（仅 assistant） -->
+          <button
+            v-if="role === 'assistant' && !isGenerating"
+            class="action-btn"
+            :class="{ 'tts-playing': ttsState === 'playing' }"
+            type="button"
+            :title="ttsState === 'playing' ? $t('chat.ttsStop') : $t('chat.ttsPlay')"
+            :disabled="ttsState === 'loading'"
+            @click="handleTts"
+          >
+            <svg v-if="ttsState === 'loading'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="tts-loading-icon">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 6v6l4 2"/>
+            </svg>
+            <svg v-else-if="ttsState === 'playing'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+            </svg>
+            <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            </svg>
+          </button>
           <!-- 重新生成（仅 assistant） -->
           <button
             v-if="role === 'assistant' && !isGenerating"
@@ -300,6 +323,7 @@ import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMarkdownRenderer } from '@/composables/useMarkdownRenderer'
 import { useAuthenticatedAttachment } from '@/composables/useAuthenticatedAttachment'
+import { http } from '@/api'
 import TypingCursor from './TypingCursor.vue'
 import type { Message, ChatAttachment, ToolCallMeta, PlanMeta } from '@/types'
 import type { ChatErrorInfo } from '@/types/chatError'
@@ -467,8 +491,62 @@ function copyMessage() {
   }).catch(() => {})
 }
 
+// --- TTS 朗读 ---
+const ttsState = ref<'idle' | 'loading' | 'playing'>('idle')
+let ttsAudio: HTMLAudioElement | null = null
+
+async function handleTts() {
+  if (ttsState.value === 'playing') {
+    // 停止播放
+    ttsAudio?.pause()
+    ttsAudio = null
+    ttsState.value = 'idle'
+    return
+  }
+
+  const text = displayContent.value || props.message.content || ''
+  if (!text) return
+
+  const conversationId = props.message.conversationId
+  if (!conversationId) return
+
+  ttsState.value = 'loading'
+  try {
+    const res: any = await http.post('/tts/synthesize', {
+      conversationId,
+      text,
+    })
+    if (res.data?.success && res.data?.audioUrl) {
+      // 通过认证 fetch 获取音频 blob
+      const audioRes = await fetch(res.data.audioUrl, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      })
+      const blob = await audioRes.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      ttsAudio = new Audio(blobUrl)
+      ttsAudio.onended = () => {
+        ttsState.value = 'idle'
+        URL.revokeObjectURL(blobUrl)
+        ttsAudio = null
+      }
+      ttsAudio.onerror = () => {
+        ttsState.value = 'idle'
+        URL.revokeObjectURL(blobUrl)
+        ttsAudio = null
+      }
+      ttsState.value = 'playing'
+      await ttsAudio.play()
+    } else {
+      ttsState.value = 'idle'
+    }
+  } catch {
+    ttsState.value = 'idle'
+  }
+}
+
 onBeforeUnmount(() => {
   if (copyTimer) clearTimeout(copyTimer)
+  if (ttsAudio) { ttsAudio.pause(); ttsAudio = null }
   revokeAll()
 })
 
@@ -1184,6 +1262,16 @@ watch(isGenerating, (generating) => {
 
 .action-btn.copied {
   color: #10b981;
+}
+.action-btn.tts-playing {
+  color: var(--mc-primary);
+}
+.tts-loading-icon {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .action-time {

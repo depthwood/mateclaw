@@ -87,6 +87,8 @@ export default {
     copy: '复制',
     copied: '已复制',
     regenerate: '重新生成',
+    ttsPlay: '朗读',
+    ttsStop: '停止朗读',
     conversations: '会话列表',
     newChat: '新对话',
     loadingAgents: '加载 Agent 中...',
@@ -204,6 +206,8 @@ export default {
     sections: {
       model: '模型管理',
       system: '系统设置',
+      image: '图片生成',
+      tts: '语音合成',
       video: '视频生成',
       about: '关于',
     },
@@ -333,6 +337,17 @@ export default {
       tavilyBaseUrl: 'Tavily 接口地址',
       duckduckgoEnabled: 'DuckDuckGo（免 Key）',
       searxngBaseUrl: 'SearXNG 地址',
+      // TTS 语音合成
+      ttsEnabled: '启用语音合成',
+      ttsProvider: '首选 TTS Provider',
+      ttsFallbackEnabled: 'Provider 回退',
+      ttsAutoMode: '自动朗读模式',
+      ttsSpeed: '语速',
+      // 图片生成
+      imageEnabled: '启用图片生成',
+      imageProvider: '首选图片 Provider',
+      imageFallbackEnabled: 'Provider 回退',
+      openaiStatus: 'OpenAI 状态',
       // 视频生成
       videoEnabled: '启用视频生成',
       videoProvider: '首选视频 Provider',
@@ -358,6 +373,23 @@ export default {
       tavilyBaseUrl: '通常无需修改，除非使用自定义代理地址。',
       duckduckgoEnabled: '免费搜索兜底，无需 API Key。默认开启，作为零配置下的搜索降级方案。',
       searxngBaseUrl: '自部署 SearXNG 实例地址。Docker 部署时自动配置。',
+      // TTS 语音合成
+      ttsEnabled: '开启后可通过消息朗读按钮或自动模式使用语音合成。Edge TTS 免费无需 Key。',
+      ttsProvider: '选择首选 TTS Provider，auto 模式优先使用免费的 Edge TTS。',
+      ttsFallbackEnabled: '首选 Provider 失败时自动尝试其他已配置的 Provider。',
+      ttsAutoMode: 'off = 仅手动朗读，always = 每条 AI 回复自动播放语音。',
+      ttsSpeed: '语音播放速度，1.0 为正常速度。',
+      edgeTtsInfo: '微软 Edge 内置 TTS 服务，免费使用，支持中文、英文、日文等多语言。自动根据文本语言切换语音。',
+      dashscopeTtsInfo: '复用模型管理中的 DashScope API Key。使用 CosyVoice 模型，支持多种中文语音。',
+      openaiTtsInfo: '复用模型管理中的 OpenAI API Key。支持 alloy、echo、nova 等多种语音风格。',
+      // 图片生成
+      imageEnabled: '开启后 Agent 可使用图片生成工具。需至少配置一个图片 Provider 的 API Key。',
+      imageProvider: '选择首选图片生成 Provider，auto 模式自动选择第一个可用的。',
+      imageFallbackEnabled: '首选 Provider 失败时自动尝试其他已配置的 Provider。',
+      dashscopeImageStatus: '复用模型管理中配置的 DashScope API Key，无需额外配置。',
+      openaiImageStatus: '复用模型管理中配置的 OpenAI API Key，无需额外配置。',
+      zhipuImageApiKey: '从 bigmodel.cn 获取。CogView-3-Flash 模型免费。与视频生成共用同一 Key。',
+      falImageApiKey: '从 fal.ai 获取，支持 Flux 系列图片生成模型。与视频生成共用同一 Key。',
       // 视频生成
       videoEnabled: '开启后 Agent 可使用视频生成工具。需至少配置一个视频 Provider 的 API Key。',
       videoProvider: '选择首选视频生成 Provider，auto 模式自动选择第一个可用的。',
@@ -371,6 +403,31 @@ export default {
     },
     searchTitle: '搜索服务',
     searchDesc: '配置内置搜索工具的提供商与 API 凭证',
+    ttsTitle: '语音合成',
+    ttsDesc: '配置 TTS 语音合成，支持 Edge TTS（免费）、OpenAI TTS、DashScope CosyVoice',
+    ttsProviderOptions: {
+      auto: '自动选择',
+    },
+    ttsProviderTags: {
+      free: '免费',
+      noKeyNeeded: '无需 API Key',
+      reuseLlmKey: '复用 LLM API Key',
+    },
+    ttsAutoModeOptions: {
+      off: '关闭（仅手动朗读）',
+      always: '始终自动朗读',
+    },
+    imageTitle: '图片生成',
+    imageDesc: '配置 AI 图片生成能力，支持 DashScope、OpenAI DALL-E、fal.ai Flux、智谱 CogView',
+    imageProviderOptions: {
+      auto: '自动选择',
+    },
+    imageProviderTags: {
+      reuseLlmKey: '复用 LLM API Key',
+      freeQuota: '有免费额度',
+      configuredInModels: '前往模型设置查看',
+      sharedWithVideo: '与视频共用',
+    },
     videoTitle: '视频生成',
     videoDesc: '配置 AI 视频生成能力，支持文字生成视频和图片生成视频',
     videoProviderOptions: {
