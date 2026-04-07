@@ -55,25 +55,43 @@ public class SearXNGSearchProvider implements SearchProvider {
 
     @Override
     public List<SearchResult> search(String query, SystemSettingsDTO config) {
+        return search(SearchQuery.of(query), config);
+    }
+
+    @Override
+    public List<SearchResult> search(SearchQuery searchQuery, SystemSettingsDTO config) {
         String baseUrl = config.getSearxngBaseUrl();
         if (baseUrl.endsWith("/")) {
             baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         }
 
-        String encoded = URLEncoder.encode(query, StandardCharsets.UTF_8);
-        String url = baseUrl + "/search?q=" + encoded + "&format=json&categories=general&language=auto";
+        String encoded = URLEncoder.encode(searchQuery.query(), StandardCharsets.UTF_8);
+        StringBuilder urlBuilder = new StringBuilder(baseUrl)
+                .append("/search?q=").append(encoded)
+                .append("&format=json&categories=general");
 
-        String response = HttpUtil.createGet(url)
+        // SearXNG language: language 参数
+        if (searchQuery.hasLanguage()) {
+            urlBuilder.append("&language=").append(URLEncoder.encode(searchQuery.language(), StandardCharsets.UTF_8));
+        } else {
+            urlBuilder.append("&language=auto");
+        }
+        // SearXNG freshness: time_range 参数
+        if (searchQuery.hasFreshness()) {
+            urlBuilder.append("&time_range=").append(searchQuery.freshness().toLowerCase());
+        }
+
+        String response = HttpUtil.createGet(urlBuilder.toString())
                 .header("Accept", "application/json")
                 .timeout(15000)
                 .execute()
                 .body();
 
-        log.debug("SearXNG result for '{}': length={}", query, response != null ? response.length() : 0);
-        return parseResponse(response);
+        log.debug("SearXNG result for '{}': length={}", searchQuery.query(), response != null ? response.length() : 0);
+        return parseResponse(response, searchQuery.resolvedCount());
     }
 
-    private List<SearchResult> parseResponse(String response) {
+    private List<SearchResult> parseResponse(String response, int limit) {
         List<SearchResult> results = new ArrayList<>();
         if (response == null || response.isBlank()) return results;
 
@@ -82,7 +100,7 @@ public class SearXNGSearchProvider implements SearchProvider {
             JSONArray items = json.getJSONArray("results");
             if (items == null) return results;
 
-            int limit = Math.min(items.size(), 5);
+            limit = Math.min(items.size(), limit);
             for (int i = 0; i < limit; i++) {
                 JSONObject item = items.getJSONObject(i);
                 String itemUrl = item.getStr("url");

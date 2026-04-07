@@ -141,7 +141,7 @@ public class AgentGraphBuilder {
         }
         ModelProtocol protocol = ModelProtocol.fromChatModel(provider.getChatModel());
 
-        // 内置搜索：DashScope 或 Kimi 开启时，移除 WebSearchTool 避免冲突
+        // 内置搜索检测（DashScope / Kimi），但不再移除 WebSearchTool — 两者协同而非互斥
         boolean builtinSearchEnabled = false;
         Map<String, Object> providerKwargs = modelProviderService.readProviderGenerateKwargs(provider);
         if (protocol == ModelProtocol.DASHSCOPE_NATIVE) {
@@ -150,10 +150,9 @@ public class AgentGraphBuilder {
             builtinSearchEnabled = true;
         }
         if (builtinSearchEnabled) {
-            int before = toolSet.size();
-            toolSet = toolSet.excluding(Set.of("search"));
-            log.info("内置搜索已开启 (provider={}), 移除 WebSearchTool (tools: {} -> {})",
-                    provider.getProviderId(), before, toolSet.size());
+            // Phase 2: 不再移除 search 工具，改为在 prompt 中设定优先级引导
+            // 内置搜索作为首选，search 工具作为补充/兜底
+            log.info("内置搜索已开启 (provider={})，search 工具保留作为补充通道", provider.getProviderId());
         }
         int maxIter = entity.getMaxIterations() != null ? entity.getMaxIterations() : 25;
 
@@ -598,20 +597,17 @@ public class AgentGraphBuilder {
         if (builtinSearchEnabled) {
             searchGuidance = """
 
-                ## Built-in Web Search (IMPORTANT)
-                You have built-in web search capability enabled by the model provider. Your responses automatically incorporate live web search results.
+                ## Web Search Capability
 
-                ### Rules
-                - **直接回答** — 不要调用 browser_use、search 或任何其他工具进行网页搜索。
-                - **不要说你无法搜索** — 你的回复已自动融合实时搜索结果。
-                - 当用户要求"联网搜索"、"查最新新闻"时，直接生成包含搜索结果的回答。
+                You have **dual search capability**:
+                1. **Built-in search** (preferred): Your responses automatically incorporate live web search results from the model provider. For most queries, answer directly — your response already includes real-time search data.
+                2. **search tool** (supplementary): Available as a fallback. Supports advanced parameters: `freshness` (day/week/month/year), `language` (zh-CN/en), `count` (1-10).
 
-                ### 新闻搜索策略
-                当用户要求查新闻时：
-                1. 根据分类构造搜索意图（科技、财经、国际等）
-                2. 直接回答，内容自动包含实时搜索结果
-                3. 按格式输出：`📰 [分类] 标题 — 来源 | 时间 + 摘要`
-                4. 每个分类最多 5 条，优先展示最新内容
+                ### Priority Rules
+                - **Default**: Answer directly using built-in search. Do NOT say you cannot search — your replies already include live results.
+                - **Use search tool** ONLY when: you need precise time filtering (e.g., user asks for "yesterday's news" → call search with freshness=day), specific language results, or your built-in results feel insufficient.
+                - **NEVER** call both browser_use and search tool for the same query.
+                - When searching for news, use the standard format: `📰 [Category] Title — Source | Time + Summary`, up to 5 results per category.
                 """;
         }
 

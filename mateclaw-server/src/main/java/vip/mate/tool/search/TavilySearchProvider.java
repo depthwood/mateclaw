@@ -51,25 +51,47 @@ public class TavilySearchProvider implements SearchProvider {
 
     @Override
     public List<SearchResult> search(String query, SystemSettingsDTO config) {
+        return search(SearchQuery.of(query), config);
+    }
+
+    @Override
+    public List<SearchResult> search(SearchQuery searchQuery, SystemSettingsDTO config) {
         String apiKey = config.getTavilyApiKey();
         String baseUrl = config.getTavilyBaseUrl();
         if (baseUrl == null || baseUrl.isBlank()) {
             baseUrl = DEFAULT_BASE_URL;
         }
 
-        String body = JSONUtil.toJsonStr(new JSONObject()
-                .set("query", query)
-                .set("max_results", 5)
-                .set("api_key", apiKey));
+        JSONObject reqBody = new JSONObject()
+                .set("query", searchQuery.query())
+                .set("max_results", searchQuery.resolvedCount())
+                .set("api_key", apiKey);
+
+        // Tavily freshness: days 参数（过去 N 天）
+        if (searchQuery.hasFreshness()) {
+            Integer days = mapFreshnessToDays(searchQuery.freshness());
+            if (days != null) reqBody.set("days", days);
+        }
+
         String response = HttpUtil.createPost(baseUrl)
                 .header("Content-Type", "application/json")
-                .body(body)
+                .body(JSONUtil.toJsonStr(reqBody))
                 .timeout(15000)
                 .execute()
                 .body();
 
-        log.debug("Tavily result for '{}': {}", query, response);
+        log.debug("Tavily result for '{}': {}", searchQuery.query(), response);
         return parseResponse(response);
+    }
+
+    private Integer mapFreshnessToDays(String freshness) {
+        return switch (freshness.toLowerCase()) {
+            case "day" -> 1;
+            case "week" -> 7;
+            case "month" -> 30;
+            case "year" -> 365;
+            default -> null;
+        };
     }
 
     private List<SearchResult> parseResponse(String response) {

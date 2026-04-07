@@ -66,7 +66,25 @@ public class DuckDuckGoSearchProvider implements SearchProvider {
 
     @Override
     public List<SearchResult> search(String query, SystemSettingsDTO config) {
-        String encoded = URLEncoder.encode(query, StandardCharsets.UTF_8);
+        return search(SearchQuery.of(query), config);
+    }
+
+    @Override
+    public List<SearchResult> search(SearchQuery searchQuery, SystemSettingsDTO config) {
+        String encoded = URLEncoder.encode(searchQuery.query(), StandardCharsets.UTF_8);
+
+        // 构建请求 body：基础 query + 可选的 freshness 和 language 参数
+        StringBuilder bodyBuilder = new StringBuilder("q=").append(encoded);
+        // DuckDuckGo freshness: df=d (day), df=w (week), df=m (month), df=y (year)
+        if (searchQuery.hasFreshness()) {
+            String df = mapFreshnessToDf(searchQuery.freshness());
+            if (df != null) bodyBuilder.append("&df=").append(df);
+        }
+        // DuckDuckGo region: kl 参数（如 cn-zh, us-en, jp-jp）
+        if (searchQuery.hasLanguage()) {
+            String kl = mapLanguageToKl(searchQuery.language());
+            if (kl != null) bodyBuilder.append("&kl=").append(kl);
+        }
 
         // DuckDuckGo 在部分网络环境下可能出现 SSLHandshakeException，加一次重试
         String response = null;
@@ -78,18 +96,18 @@ public class DuckDuckGoSearchProvider implements SearchProvider {
                         .header("Content-Type", "application/x-www-form-urlencoded")
                         .header("Accept", "text/html")
                         .header("Accept-Language", "en-US,en;q=0.9,zh-CN;q=0.8")
-                        .body("q=" + encoded)
+                        .body(bodyBuilder.toString())
                         .timeout(15000)
                         .execute()
                         .body();
-                break; // 成功则跳出
+                break;
             } catch (Exception e) {
                 log.warn("DuckDuckGo 请求失败 (attempt {}/{}): {}", attempt, maxAttempts, e.getMessage());
                 if (attempt == maxAttempts) {
-                    throw e; // 最后一次仍失败则抛出，由 WebSearchService 捕获
+                    throw e;
                 }
                 try {
-                    Thread.sleep(1000); // 短暂等待后重试
+                    Thread.sleep(1000);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("DuckDuckGo 搜索被中断", ie);
@@ -97,12 +115,30 @@ public class DuckDuckGoSearchProvider implements SearchProvider {
             }
         }
 
-        log.debug("DuckDuckGo search completed for '{}', response length: {}", query,
+        log.debug("DuckDuckGo search completed for '{}', response length: {}", searchQuery.query(),
                 response != null ? response.length() : 0);
-        return parseHtmlResults(response);
+        return parseHtmlResults(response, searchQuery.resolvedCount());
     }
 
-    private List<SearchResult> parseHtmlResults(String html) {
+    private String mapFreshnessToDf(String freshness) {
+        return switch (freshness.toLowerCase()) {
+            case "day" -> "d";
+            case "week" -> "w";
+            case "month" -> "m";
+            case "year" -> "y";
+            default -> null;
+        };
+    }
+
+    private String mapLanguageToKl(String language) {
+        String lang = language.toLowerCase();
+        if (lang.startsWith("zh")) return "cn-zh";
+        if (lang.startsWith("en")) return "us-en";
+        if (lang.startsWith("ja")) return "jp-jp";
+        return null;
+    }
+
+    private List<SearchResult> parseHtmlResults(String html, int limit) {
         List<SearchResult> results = new ArrayList<>();
         if (html == null || html.isBlank()) return results;
 
@@ -111,7 +147,7 @@ public class DuckDuckGoSearchProvider implements SearchProvider {
         Matcher snippetMatcher = SNIPPET_PATTERN.matcher(html);
 
         int count = 0;
-        while (titleMatcher.find() && count < 5) {
+        while (titleMatcher.find() && count < limit) {
             String rawUrl = titleMatcher.group(1);
             String rawTitle = titleMatcher.group(2);
 

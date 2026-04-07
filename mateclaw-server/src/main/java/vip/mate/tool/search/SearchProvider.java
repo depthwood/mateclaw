@@ -42,4 +42,13 @@ public interface SearchProvider {
      * @return 搜索结果列表；不应返回 null，失败时抛异常
      */
     List<SearchResult> search(String query, SystemSettingsDTO config);
+
+    /**
+     * 执行搜索（支持 freshness / language / count 等高级参数）
+     * <p>默认实现回退到 {@link #search(String, SystemSettingsDTO)}，
+     * 各 provider 可 override 以传递 provider 特有参数。
+     */
+    default List<SearchResult> search(SearchQuery searchQuery, SystemSettingsDTO config) {
+        return search(searchQuery.query(), config);
+    }
 }
