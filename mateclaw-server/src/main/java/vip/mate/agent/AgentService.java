@@ -81,6 +81,13 @@ public class AgentService {
         agentInstances.remove(id);
     }
 
+    /**
+     * 清除 Agent 运行时缓存（绑定变更后需调用，使下次对话重新构建 Agent）
+     */
+    public void invalidateAgentCache(Long agentId) {
+        agentInstances.remove(agentId);
+    }
+
     // ==================== 运行时入口 ====================
 
     public String chat(Long agentId, String message, String conversationId) {

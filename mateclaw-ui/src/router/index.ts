@@ -16,6 +16,12 @@ const router = createRouter({
           meta: { title: 'Chat' },
         },
         {
+          path: 'dashboard',
+          name: 'Dashboard',
+          component: () => import('@/views/Dashboard.vue'),
+          meta: { title: 'Dashboard' },
+        },
+        {
           path: 'agents',
           name: 'Agents',
           component: () => import('@/views/Agents.vue'),
@@ -156,6 +162,12 @@ const router = createRouter({
               name: 'SecurityAuditLogs',
               component: () => import('@/views/Security/AuditLogs/index.vue'),
               meta: { title: 'Security - Audit Logs' },
+            },
+            {
+              path: 'activity',
+              name: 'SecurityActivity',
+              component: () => import('@/views/Security/Activity/index.vue'),
+              meta: { title: 'Security - Activity' },
             },
             {
               path: 'members',

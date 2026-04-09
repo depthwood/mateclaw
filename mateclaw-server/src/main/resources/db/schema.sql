@@ -565,3 +565,87 @@ ALTER TABLE mate_conversation ADD COLUMN IF NOT EXISTS workspace_id BIGINT NOT N
 ALTER TABLE mate_wiki_knowledge_base ADD COLUMN IF NOT EXISTS workspace_id BIGINT NOT NULL DEFAULT 1;
 ALTER TABLE mate_tool ADD COLUMN IF NOT EXISTS workspace_id BIGINT NOT NULL DEFAULT 1;
 ALTER TABLE mate_skill ADD COLUMN IF NOT EXISTS workspace_id BIGINT NOT NULL DEFAULT 1;
+
+-- =============================================
+-- Agent-Skill / Agent-Tool 绑定表（Phase 3 Sprint 2）
+-- =============================================
+
+CREATE TABLE IF NOT EXISTS mate_agent_skill (
+    id           BIGINT    NOT NULL PRIMARY KEY,
+    agent_id     BIGINT    NOT NULL,
+    skill_id     BIGINT    NOT NULL,
+    enabled      BOOLEAN   NOT NULL DEFAULT TRUE,
+    config_json  TEXT,
+    create_time  DATETIME  NOT NULL,
+    update_time  DATETIME  NOT NULL,
+    deleted      INT       NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_agent_skill ON mate_agent_skill(agent_id, skill_id);
+
+CREATE TABLE IF NOT EXISTS mate_agent_tool (
+    id           BIGINT    NOT NULL PRIMARY KEY,
+    agent_id     BIGINT    NOT NULL,
+    tool_name    VARCHAR(128) NOT NULL,
+    enabled      BOOLEAN   NOT NULL DEFAULT TRUE,
+    create_time  DATETIME  NOT NULL,
+    update_time  DATETIME  NOT NULL,
+    deleted      INT       NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_agent_tool ON mate_agent_tool(agent_id, tool_name);
+
+-- =============================================
+-- CronJob 执行历史（Phase 3 Sprint 3）
+-- =============================================
+CREATE TABLE IF NOT EXISTS mate_cron_job_run (
+    id              BIGINT       NOT NULL PRIMARY KEY,
+    cron_job_id     BIGINT       NOT NULL,
+    conversation_id VARCHAR(64),
+    status          VARCHAR(32)  NOT NULL,
+    trigger_type    VARCHAR(32)  NOT NULL DEFAULT 'scheduled',
+    started_at      DATETIME     NOT NULL,
+    finished_at     DATETIME,
+    error_message   TEXT,
+    token_usage     INT          DEFAULT 0,
+    create_time     DATETIME     NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cron_run_job ON mate_cron_job_run(cron_job_id, started_at);
+
+-- =============================================
+-- 用量日统计（Phase 3 Sprint 3）
+-- =============================================
+CREATE TABLE IF NOT EXISTS mate_usage_daily (
+    id                 BIGINT   NOT NULL PRIMARY KEY,
+    workspace_id       BIGINT   NOT NULL,
+    agent_id           BIGINT,
+    stat_date          DATE     NOT NULL,
+    conversation_count INT      DEFAULT 0,
+    message_count      INT      DEFAULT 0,
+    total_tokens       BIGINT   DEFAULT 0,
+    prompt_tokens      BIGINT   DEFAULT 0,
+    completion_tokens  BIGINT   DEFAULT 0,
+    tool_call_count    INT      DEFAULT 0,
+    error_count        INT      DEFAULT 0,
+    create_time        DATETIME NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_usage_daily ON mate_usage_daily(workspace_id, agent_id, stat_date);
+
+-- =============================================
+-- 操作审计事件表（Phase 3 Sprint 1）
+-- =============================================
+CREATE TABLE IF NOT EXISTS mate_audit_event (
+    id             BIGINT       NOT NULL PRIMARY KEY,
+    workspace_id   BIGINT,
+    user_id        BIGINT       NOT NULL,
+    username       VARCHAR(64)  NOT NULL,
+    action         VARCHAR(64)  NOT NULL,
+    resource_type  VARCHAR(64)  NOT NULL,
+    resource_id    VARCHAR(128),
+    resource_name  VARCHAR(256),
+    detail_json    TEXT,
+    ip_address     VARCHAR(64),
+    user_agent     VARCHAR(256),
+    create_time    DATETIME     NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_audit_ws_time ON mate_audit_event(workspace_id, create_time);
+CREATE INDEX IF NOT EXISTS idx_audit_user ON mate_audit_event(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_resource ON mate_audit_event(resource_type, resource_id);

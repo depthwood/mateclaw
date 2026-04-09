@@ -9,7 +9,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import vip.mate.agent.AgentService;
 import vip.mate.agent.AgentState;
 import vip.mate.agent.model.AgentEntity;
+import vip.mate.audit.service.AuditEventService;
 import vip.mate.common.result.R;
+import vip.mate.workspace.core.annotation.RequireWorkspaceRole;
 
 import java.io.IOException;
 import java.util.List;
@@ -29,10 +31,12 @@ import java.util.concurrent.Executors;
 public class AgentController {
 
     private final AgentService agentService;
+    private final AuditEventService auditEventService;
     private final ExecutorService sseExecutor = Executors.newCachedThreadPool();
 
     @Operation(summary = "获取Agent列表")
     @GetMapping
+    @RequireWorkspaceRole("viewer")
     public R<List<AgentEntity>> list(
             @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId) {
         if (workspaceId != null) {
@@ -43,32 +47,42 @@ public class AgentController {
 
     @Operation(summary = "获取Agent详情")
     @GetMapping("/{id}")
+    @RequireWorkspaceRole("viewer")
     public R<AgentEntity> get(@PathVariable Long id) {
         return R.ok(agentService.getAgent(id));
     }
 
     @Operation(summary = "创建Agent")
     @PostMapping
+    @RequireWorkspaceRole("member")
     public R<AgentEntity> create(
             @RequestHeader(value = "X-Workspace-Id", required = false) Long workspaceId,
             @RequestBody AgentEntity agent) {
         if (workspaceId != null) {
             agent.setWorkspaceId(workspaceId);
         }
-        return R.ok(agentService.createAgent(agent));
+        AgentEntity created = agentService.createAgent(agent);
+        auditEventService.record("CREATE", "AGENT", String.valueOf(created.getId()), created.getName(), null);
+        return R.ok(created);
     }
 
     @Operation(summary = "更新Agent")
     @PutMapping("/{id}")
+    @RequireWorkspaceRole("member")
     public R<AgentEntity> update(@PathVariable Long id, @RequestBody AgentEntity agent) {
         agent.setId(id);
-        return R.ok(agentService.updateAgent(agent));
+        AgentEntity updated = agentService.updateAgent(agent);
+        auditEventService.record("UPDATE", "AGENT", String.valueOf(id), updated.getName(), null);
+        return R.ok(updated);
     }
 
     @Operation(summary = "删除Agent")
     @DeleteMapping("/{id}")
+    @RequireWorkspaceRole("admin")
     public R<Void> delete(@PathVariable Long id) {
+        AgentEntity agent = agentService.getAgent(id);
         agentService.deleteAgent(id);
+        auditEventService.record("DELETE", "AGENT", String.valueOf(id), agent != null ? agent.getName() : null, null);
         return R.ok();
     }
 

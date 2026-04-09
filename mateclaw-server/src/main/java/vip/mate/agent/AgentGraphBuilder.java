@@ -51,6 +51,7 @@ import vip.mate.agent.graph.plan.edge.StepProgressDispatcher;
 import vip.mate.agent.graph.plan.node.*;
 import vip.mate.agent.graph.plan.state.PlanStateKeys;
 import vip.mate.agent.graph.state.MateClawStateKeys;
+import vip.mate.agent.binding.service.AgentBindingService;
 import vip.mate.agent.model.AgentEntity;
 import vip.mate.config.GraphObservationProperties;
 import vip.mate.exception.MateClawException;
@@ -92,6 +93,7 @@ import java.util.Set;
 public class AgentGraphBuilder {
 
     private final ToolRegistry toolRegistry;
+    private final AgentBindingService agentBindingService;
     private final SkillService skillService;
     private final vip.mate.skill.runtime.SkillRuntimeService skillRuntimeService;
     private final ConversationService conversationService;
@@ -125,6 +127,10 @@ public class AgentGraphBuilder {
 
         // 过滤掉 denied 工具，使模型完全看不到它们（防止 prompt injection 利用 schema）
         toolSet = toolSet.withDeniedToolsFiltered(toolGuardConfigService.getDeniedTools());
+
+        // Per-agent tool 绑定过滤：如果 agent 有自定义 tool 绑定，则只保留绑定的工具
+        Set<String> boundTools = agentBindingService.getBoundToolNames(entity.getId());
+        toolSet = toolSet.withAllowedToolsOnly(boundTools); // null = 全局默认
 
         // 统一使用全局默认模型（AgentEntity.modelName 为历史残留字段，不参与运行时选择）
         ModelConfigEntity runtimeModel;
@@ -533,8 +539,9 @@ public class AgentGraphBuilder {
                 ? workspacePrompt
                 : (entity.getSystemPrompt() != null ? entity.getSystemPrompt() : "");
 
-        // 使用 skill runtime 构建技能增强（分层注入，不再全量拼接）
-        String skillEnhancement = skillRuntimeService.buildSkillPromptEnhancement();
+        // 使用 skill runtime 构建技能增强（per-agent 绑定过滤）
+        Set<Long> boundSkillIds = agentBindingService.getBoundSkillIds(entity.getId());
+        String skillEnhancement = skillRuntimeService.buildSkillPromptEnhancement(boundSkillIds);
 
         // 工具调用指导
         String toolGuidance = """

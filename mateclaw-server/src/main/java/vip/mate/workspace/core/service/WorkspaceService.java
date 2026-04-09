@@ -1,6 +1,8 @@
 package vip.mate.workspace.core.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -11,6 +13,7 @@ import vip.mate.workspace.core.model.WorkspaceMemberEntity;
 import vip.mate.workspace.core.repository.WorkspaceMapper;
 import vip.mate.workspace.core.repository.WorkspaceMemberMapper;
 
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -28,6 +31,12 @@ public class WorkspaceService {
 
     /** 默认工作区 slug */
     public static final String DEFAULT_SLUG = "default";
+
+    /** 成员资格缓存：key = "workspaceId:userId"，value = role string（null 表示非成员） */
+    private final Cache<String, String> membershipCache = Caffeine.newBuilder()
+            .expireAfterWrite(Duration.ofSeconds(60))
+            .maximumSize(1000)
+            .build();
 
     // ==================== 工作区 CRUD ====================
 
@@ -141,6 +150,7 @@ public class WorkspaceService {
         member.setUserId(userId);
         member.setRole(role != null ? role : "member");
         memberMapper.insert(member);
+        evictMembershipCache(workspaceId, userId);
         log.info("Added member to workspace: userId={}, workspaceId={}, role={}", userId, workspaceId, member.getRole());
         return member;
     }
@@ -155,6 +165,7 @@ public class WorkspaceService {
         }
         member.setRole(role);
         memberMapper.updateById(member);
+        evictMembershipCache(workspaceId, userId);
         return member;
     }
 
@@ -167,6 +178,7 @@ public class WorkspaceService {
             throw new MateClawException("不能移除工作区拥有者");
         }
         memberMapper.deleteById(member.getId());
+        evictMembershipCache(workspaceId, userId);
         log.info("Removed member from workspace: userId={}, workspaceId={}", userId, workspaceId);
     }
 
@@ -195,6 +207,28 @@ public class WorkspaceService {
         if (!hasPermission(workspaceId, userId, minRole)) {
             throw new MateClawException("权限不足：需要 " + minRole + " 或更高角色");
         }
+    }
+
+    /**
+     * 带缓存的权限检查（拦截器高频调用，避免每次请求查库）
+     */
+    public boolean hasPermissionCached(Long workspaceId, Long userId, String minRole) {
+        String cacheKey = workspaceId + ":" + userId;
+        String role = membershipCache.get(cacheKey, k -> {
+            WorkspaceMemberEntity member = getMembership(workspaceId, userId);
+            return member != null ? member.getRole() : "";
+        });
+        if (role == null || role.isEmpty()) {
+            return false;
+        }
+        return roleLevel(role) >= roleLevel(minRole);
+    }
+
+    /**
+     * 清除指定 workspace + user 的成员资格缓存（成员变更时调用）
+     */
+    public void evictMembershipCache(Long workspaceId, Long userId) {
+        membershipCache.invalidate(workspaceId + ":" + userId);
     }
 
     private int roleLevel(String role) {

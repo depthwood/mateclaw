@@ -112,7 +112,23 @@
           </button>
         </div>
         <div class="modal-body">
-          <div class="form-grid">
+          <!-- Tab Bar -->
+          <div class="modal-tabs">
+            <button class="modal-tab" :class="{ active: modalTab === 'basic' }" @click="modalTab = 'basic'">
+              {{ t('agents.tabs.basic', 'Basic') }}
+            </button>
+            <button v-if="editingAgent" class="modal-tab" :class="{ active: modalTab === 'skills' }" @click="modalTab = 'skills'">
+              {{ t('agents.tabs.skills', 'Skills') }}
+              <span v-if="selectedSkillIds.length" class="tab-badge">{{ selectedSkillIds.length }}</span>
+            </button>
+            <button v-if="editingAgent" class="modal-tab" :class="{ active: modalTab === 'tools' }" @click="modalTab = 'tools'">
+              {{ t('agents.tabs.tools', 'Tools') }}
+              <span v-if="selectedToolNames.length" class="tab-badge">{{ selectedToolNames.length }}</span>
+            </button>
+          </div>
+
+          <!-- Basic Tab -->
+          <div v-if="modalTab === 'basic'" class="form-grid">
             <div class="form-group">
               <label class="form-label">{{ t('agents.fields.name') }} *</label>
               <input v-model="form.name" class="form-input" :placeholder="t('agents.placeholders.name')" />
@@ -152,6 +168,50 @@
               </label>
             </div>
           </div>
+
+          <!-- Skills Tab -->
+          <div v-if="modalTab === 'skills'" class="binding-tab">
+            <p class="binding-hint">{{ t('agents.binding.skillsHint', 'Select skills this agent can use. Leave empty to use all enabled skills.') }}</p>
+            <div v-if="availableSkills.length === 0" class="binding-empty">{{ t('agents.binding.noSkills', 'No skills available') }}</div>
+            <div v-else class="binding-list">
+              <label
+                v-for="skill in availableSkills"
+                :key="skill.id"
+                class="binding-item"
+                :class="{ selected: selectedSkillIds.includes(skill.id) }"
+              >
+                <input type="checkbox" :value="skill.id" v-model="selectedSkillIds" class="binding-checkbox" />
+                <span class="binding-icon">{{ skill.icon || '🧩' }}</span>
+                <div class="binding-info">
+                  <span class="binding-name">{{ skill.name }}</span>
+                  <span v-if="skill.description" class="binding-desc">{{ skill.description?.slice(0, 80) }}</span>
+                </div>
+                <span v-if="skill.version" class="binding-version">v{{ skill.version }}</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Tools Tab -->
+          <div v-if="modalTab === 'tools'" class="binding-tab">
+            <p class="binding-hint">{{ t('agents.binding.toolsHint', 'Select tools this agent can use. Leave empty to use all enabled tools.') }}</p>
+            <div v-if="availableTools.length === 0" class="binding-empty">{{ t('agents.binding.noTools', 'No tools available') }}</div>
+            <div v-else class="binding-list">
+              <label
+                v-for="tool in availableTools"
+                :key="tool.name"
+                class="binding-item"
+                :class="{ selected: selectedToolNames.includes(tool.name) }"
+              >
+                <input type="checkbox" :value="tool.name" v-model="selectedToolNames" class="binding-checkbox" />
+                <span class="binding-icon">{{ tool.icon || '🔧' }}</span>
+                <div class="binding-info">
+                  <span class="binding-name">{{ tool.displayName || tool.name }}</span>
+                  <span v-if="tool.description" class="binding-desc">{{ tool.description?.slice(0, 80) }}</span>
+                </div>
+                <span class="binding-type-badge">{{ tool.toolType }}</span>
+              </label>
+            </div>
+          </div>
         </div>
         <div class="modal-footer">
           <button class="btn-secondary" @click="closeModal">{{ t('common.cancel') }}</button>
@@ -168,7 +228,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { agentApi } from '@/api/index'
+import { agentApi, agentBindingApi, skillApi, toolApi } from '@/api/index'
 import type { Agent } from '@/types/index'
 
 const { t } = useI18n()
@@ -177,6 +237,13 @@ const searchText = ref('')
 const activeFilter = ref('all')
 const showModal = ref(false)
 const editingAgent = ref<Agent | null>(null)
+const modalTab = ref<'basic' | 'skills' | 'tools'>('basic')
+
+// Binding state
+const availableSkills = ref<any[]>([])
+const availableTools = ref<any[]>([])
+const selectedSkillIds = ref<number[]>([])
+const selectedToolNames = ref<string[]>([])
 
 const filterTabs = [
   { key: 'agents.tabs.all', value: 'all' },
@@ -243,10 +310,13 @@ function formatTime(time?: string): string {
 function openCreateModal() {
   editingAgent.value = null
   form.value = defaultForm()
+  modalTab.value = 'basic'
+  selectedSkillIds.value = []
+  selectedToolNames.value = []
   showModal.value = true
 }
 
-function openEditModal(agent: Agent) {
+async function openEditModal(agent: Agent) {
   editingAgent.value = agent
   form.value = {
     name: agent.name,
@@ -258,7 +328,28 @@ function openEditModal(agent: Agent) {
     tags: agent.tags || '',
     enabled: agent.enabled,
   }
+  modalTab.value = 'basic'
   showModal.value = true
+
+  // Load available skills/tools and current bindings in parallel
+  try {
+    const [skillsRes, toolsRes, boundSkillsRes, boundToolsRes] = await Promise.all([
+      skillApi.list(),
+      toolApi.list(),
+      agentBindingApi.listSkills(agent.id),
+      agentBindingApi.listTools(agent.id),
+    ])
+    availableSkills.value = (skillsRes as any).data || []
+    availableTools.value = (toolsRes as any).data || []
+    selectedSkillIds.value = ((boundSkillsRes as any).data || [])
+      .filter((b: any) => b.enabled)
+      .map((b: any) => b.skillId)
+    selectedToolNames.value = ((boundToolsRes as any).data || [])
+      .filter((b: any) => b.enabled)
+      .map((b: any) => b.toolName)
+  } catch {
+    // Non-blocking: binding data load failure doesn't prevent editing basic info
+  }
 }
 
 function closeModal() {
@@ -268,11 +359,23 @@ function closeModal() {
 
 async function saveAgent() {
   try {
+    let agentId: string | number
     if (editingAgent.value) {
       await agentApi.update(editingAgent.value.id, form.value)
+      agentId = editingAgent.value.id
     } else {
-      await agentApi.create(form.value)
+      const res: any = await agentApi.create(form.value)
+      agentId = res.data?.id
     }
+
+    // Save bindings (only for existing agents or after create returns id)
+    if (agentId && editingAgent.value) {
+      await Promise.all([
+        agentBindingApi.setSkills(agentId, selectedSkillIds.value),
+        agentBindingApi.setTools(agentId, selectedToolNames.value),
+      ])
+    }
+
     ElMessage.success(t('agents.messages.saveSuccess'))
     closeModal()
     await loadAgents()
@@ -383,6 +486,47 @@ async function toggleAgent(agent: Agent) {
 .modal-close { width: 32px; height: 32px; border: none; background: none; cursor: pointer; color: var(--mc-text-tertiary); display: flex; align-items: center; justify-content: center; border-radius: 6px; }
 .modal-close:hover { background: var(--mc-bg-sunken); color: var(--mc-text-primary); }
 .modal-body { flex: 1; overflow-y: auto; padding: 20px 24px; }
+
+/* Modal Tabs */
+.modal-tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--mc-border-light); padding-bottom: 0; }
+.modal-tab {
+  padding: 8px 16px; border: none; background: none; cursor: pointer;
+  font-size: 13px; font-weight: 500; color: var(--mc-text-tertiary);
+  border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.modal-tab:hover { color: var(--mc-text-primary); }
+.modal-tab.active { color: var(--mc-primary); border-bottom-color: var(--mc-primary); }
+.tab-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 9px; background: var(--mc-primary); color: white;
+  font-size: 11px; font-weight: 600;
+}
+
+/* Binding Tab */
+.binding-tab { min-height: 200px; }
+.binding-hint { font-size: 13px; color: var(--mc-text-tertiary); margin: 0 0 16px; }
+.binding-empty { padding: 40px; text-align: center; color: var(--mc-text-tertiary); font-size: 14px; }
+.binding-list { display: flex; flex-direction: column; gap: 6px; }
+.binding-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--mc-border-light); border-radius: 8px;
+  cursor: pointer; transition: all 0.15s; background: var(--mc-bg);
+}
+.binding-item:hover { border-color: var(--mc-primary-light, rgba(217,119,87,0.3)); background: var(--mc-bg-elevated); }
+.binding-item.selected { border-color: var(--mc-primary); background: rgba(217,119,87,0.04); }
+.binding-checkbox { flex-shrink: 0; accent-color: var(--mc-primary); width: 16px; height: 16px; }
+.binding-icon { font-size: 20px; flex-shrink: 0; }
+.binding-info { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.binding-name { font-size: 14px; font-weight: 500; color: var(--mc-text-primary); }
+.binding-desc { font-size: 12px; color: var(--mc-text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.binding-version { font-size: 11px; color: var(--mc-text-tertiary); flex-shrink: 0; }
+.binding-type-badge {
+  font-size: 10px; padding: 2px 6px; border-radius: 4px; flex-shrink: 0;
+  background: var(--mc-bg-sunken); color: var(--mc-text-tertiary); text-transform: uppercase;
+}
+
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-group.full-width { grid-column: 1 / -1; }

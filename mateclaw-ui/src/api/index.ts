@@ -395,3 +395,34 @@ export const workspaceTeamApi = {
   removeMember: (id: string | number, memberId: string | number) =>
     http.delete(`/workspaces/${id}/members/${memberId}`),
 }
+
+// ==================== Agent Binding ====================
+export const agentBindingApi = {
+  listSkills: (agentId: string | number) => http.get(`/agents/${agentId}/skills`),
+  setSkills: (agentId: string | number, skillIds: number[]) => http.put(`/agents/${agentId}/skills`, skillIds),
+  bindSkill: (agentId: string | number, skillId: number) => http.post(`/agents/${agentId}/skills/${skillId}`),
+  unbindSkill: (agentId: string | number, skillId: number) => http.delete(`/agents/${agentId}/skills/${skillId}`),
+  listTools: (agentId: string | number) => http.get(`/agents/${agentId}/tools`),
+  setTools: (agentId: string | number, toolNames: string[]) => http.put(`/agents/${agentId}/tools`, toolNames),
+}
+
+// ==================== Dashboard ====================
+export const dashboardApi = {
+  overview: () => http.get('/dashboard/overview'),
+  trend: (days = 30) => http.get('/dashboard/trend', { params: { days } }),
+  agentRanking: (days = 7, topN = 10) => http.get('/dashboard/agent-ranking', { params: { days, topN } }),
+  cronJobRuns: (cronJobId: string | number, limit = 20) => http.get(`/dashboard/cron-runs/${cronJobId}`, { params: { limit } }),
+  recentRuns: (limit = 20) => http.get('/dashboard/cron-runs', { params: { limit } }),
+}
+
+// ==================== Audit Events ====================
+export const auditApi = {
+  listEvents: (params: {
+    action?: string
+    resourceType?: string
+    startTime?: string
+    endTime?: string
+    page?: number
+    size?: number
+  }) => http.get('/audit/events', { params }),
+}
